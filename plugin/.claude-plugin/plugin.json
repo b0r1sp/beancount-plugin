@@ -1,0 +1,18 @@
+{
+  "name": "beancount",
+  "description": "Local plain-text accounting. Keep a git-backed Beancount ledger in a local directory, let the assistant ingest bank statements and receipts into validated double-entry transactions, and generate HTML/Excel reports.",
+  "version": "0.1.0",
+  "author": {
+    "name": "b0r1sp"
+  },
+  "repository": "https://github.com/b0r1sp/beancount-plugin",
+  "license": "MIT",
+  "keywords": [
+    "accounting",
+    "beancount",
+    "fava",
+    "finance",
+    "mcp",
+    "bookkeeping"
+  ]
+}

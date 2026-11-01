@@ -1,0 +1,13 @@
+{
+  "name": "beancount",
+  "owner": {
+    "name": "b0r1sp"
+  },
+  "plugins": [
+    {
+      "name": "beancount",
+      "source": "./plugin",
+      "description": "Local plain-text accounting: a git-backed Beancount ledger in a local directory, AI ingestion of statements/receipts, and HTML/Excel reports."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# Python build/runtime artifacts — uv creates .venv (and uv.lock) on first use.
+.venv/
+uv.lock
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+# Generated reports and any local ledger data.
+reports/
+*.xlsx
+*.html

@@ -1,0 +1,9 @@
+# For a plain `pip install -r` development setup. The plugin itself installs
+# from ../pyproject.toml via uv; keep the two lists in step.
+mcp>=1.28,<2
+# Bounded: beanquery ships the `bean-query` CLI this plugin relies on, and a
+# major release can rename or drop a flag.
+beancount>=3.2.3,<4
+beanquery>=0.2.0,<1
+# Only renders the xlsx report.
+openpyxl>=3.1.5,<4

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "beancount": {
+      "command": "uv",
+      "args": ["run", "--quiet", "--project", "${CLAUDE_PLUGIN_ROOT}", "beancount-mcp"],
+      "env": {}
+    }
+  }
+}

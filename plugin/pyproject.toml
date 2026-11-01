@@ -1,0 +1,68 @@
+# Packaging for the beancount-plugin MCP server.
+#
+# The plugin starts the server with `uv run --project <plugin dir>
+# beancount-mcp` (see .mcp.json), so uv reads this file, provisions a suitable
+# Python if needed, installs the dependencies into plugin/.venv and runs the
+# `beancount-mcp` script below — the same way on Windows, macOS and Linux.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beancount-mcp"
+dynamic = ["version"]
+description = "MCP server for Beancount plain-text accounting on a local, git-backed ledger: double-entry transactions written by an AI agent, validated with bean-check and committed to git."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "b0r1sp" }]
+keywords = [
+  "mcp",
+  "model-context-protocol",
+  "beancount",
+  "plain-text-accounting",
+  "accounting",
+  "bookkeeping",
+  "double-entry",
+  "ledger",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business :: Financial :: Accounting",
+]
+
+# Keep in step with mcp/requirements.txt.
+dependencies = [
+  "mcp>=1.28,<2",
+  "beancount>=3.2.3,<4",
+  "beanquery>=0.2.0,<1",
+  "openpyxl>=3.1.5,<4",
+]
+
+[project.urls]
+Source = "https://github.com/b0r1sp/beancount-plugin"
+
+[project.scripts]
+beancount-mcp = "beancount_mcp.server:main"
+
+[tool.setuptools]
+package-dir = { "" = "mcp" }
+
+[tool.setuptools.dynamic]
+version = { attr = "beancount_mcp.__version__" }
+
+# The report embeds its fonts (SIL OFL 1.1, licences beside them) so it renders
+# the same with no network; reporting.py falls back to system faces when they
+# are absent. `*.md` is the bookkeeping instruction pack (bookkeeping.md), read
+# at IMPORT by instructions.py — a wheel without it does not start.
+[tool.setuptools.package-data]
+beancount_mcp = ["fonts/*.woff2", "fonts/*.txt", "*.md"]
+
+[tool.setuptools.packages.find]
+where = ["mcp"]
+include = ["beancount_mcp*"]
