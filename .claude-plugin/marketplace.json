@@ -7,7 +7,7 @@
     {
       "name": "beancount",
       "source": "./plugin",
-      "description": "Local plain-text accounting: a git-backed Beancount ledger in a local directory, AI ingestion of statements/receipts, and HTML/Excel reports."
+      "description": "Local plain-text accounting for Claude Code: a git-backed Beancount ledger in a local directory, AI ingestion of statements/receipts, and HTML/Excel reports."
     }
   ]
 }

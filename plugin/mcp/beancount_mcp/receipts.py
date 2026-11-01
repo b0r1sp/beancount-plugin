@@ -9,7 +9,7 @@ BEFORE the write. All of it is pure — dicts in, dicts out, no I/O — so a tes
 can pin it and two invocations cannot disagree.
 
 It is **not** an OCR engine and there is no OCR vendor anywhere in this plugin.
-The reading is the assistant's own vision: the model reads the photo. So the
+The reading is the assistant's own vision: Claude reads the photo. So the
 caller hands this module WHAT IT READ, with a confidence per field, and this
 module decides what may be believed.
 
@@ -102,7 +102,7 @@ class ReceiptInputError(ValueError):
 def read_input(file_path: str = "", content_base64: str = "") -> bytes:
     """Bytes from exactly one of a path or a base64 blob.
 
-    Two sources because callers differ: a local assistant has the filesystem, other
+    Two sources because callers differ: Claude Code has the filesystem, other
     clients may only have the bytes. EXACTLY one, because accepting both and silently preferring one is
     how a caller ends up storing the wrong file with no error to read.
     """

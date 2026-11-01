@@ -1,82 +1,100 @@
-# Beancount plugin
+# Beancount plugin for Claude Code
 
-Turn your coding assistant into your bookkeeper, on a ledger that lives entirely on your
-machine. The plugin bundles:
+This plugin makes Claude Code a bookkeeper. The ledger stays on your computer.
 
-- an **MCP server** that manages a local, git-backed [Beancount](https://beancount.github.io/)
-  ledger (your "book") — every write is validated with `bean-check` and committed to git, so the
-  ledger is never left broken and every change can be undone;
-- **slash commands** to set it up, ingest statements and receipts, and produce reports;
-- a **skill** (`beancount-accounting`) that teaches the assistant correct double-entry so transactions
-  land valid the first time.
+The plugin has three parts:
 
-Nothing leaves your computer: there is no account, no server, no API key. The book is a plain-text
-directory you own.
+- An **MCP server**. It keeps a [Beancount](https://beancount.github.io/) ledger (the "book") in
+  a local directory. The book is a git repository. Before each change, the server checks the
+  ledger with `bean-check`. The server records only a correct change, and it makes a git commit
+  for each change. Thus, you can undo each change.
+- **Slash commands**. They create the book, import statements and receipts, and make reports.
+- A **skill** (`beancount-accounting`). It gives Claude the rules for correct double-entry
+  transactions.
+
+The plugin does not send data to a server. It does not use an account or an API key. The book is
+a directory of text files. You own it.
 
 ## Requirements
 
-| Tool | Why | Install |
-|---|---|---|
-| An assistant with plugin support (`/plugin`) | runs the plugin | — |
-| [uv](https://docs.astral.sh/uv/) | starts the MCP server; downloads Python 3.11+ and the dependencies by itself on first run | see below |
-| [git](https://git-scm.com/) | every book is a git repository | see below |
+| Tool | Function |
+|---|---|
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Runs the plugin. |
+| [uv](https://docs.astral.sh/uv/) | Starts the MCP server. On the first start, uv downloads Python 3.11+ and the dependencies. |
+| [git](https://git-scm.com/) | Keeps the history of the book. |
 
-**uv** — one command per OS:
+### Install uv
+
+On macOS or Linux, use this command:
 
 ```bash
-# macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
+On Windows, use this command in PowerShell:
+
 ```powershell
-# Windows (PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-(or `brew install uv`, `winget install --id astral-sh.uv -e`, `pipx install uv`).
+You can also use `brew install uv`, `winget install --id astral-sh.uv -e` or `pipx install uv`.
 
-**git** — usually already installed (on Windows, the assistant generally needs Git for Windows anyway):
+### Install git
 
-| OS | Command |
+Usually, git is already on your computer. On Windows, Claude Code usually needs Git for Windows.
+
+| Operating system | Command |
 |---|---|
 | Windows | `winget install --id Git.Git -e` |
 | macOS | `xcode-select --install` (or `brew install git`) |
 | Debian / Ubuntu | `sudo apt install git` |
 
-If git is missing, the first write fails with a message naming the install command for your OS;
-nothing is written.
+If git is not available, the first change to the book stops. The error message shows the install
+command for your operating system. The book does not change.
 
-## Install
+## Install the plugin
 
-Run these one at a time — the assistant reads a multi-line paste as a *single* slash command.
+Type each command separately in Claude Code. Do not paste the commands together. Claude Code
+reads a paste of many lines as one slash command, and the install fails.
 
-```text
-/plugin marketplace add https://github.com/b0r1sp/beancount-plugin.git
-```
+1. Add the marketplace:
 
-```text
-/plugin install beancount@beancount
-```
+   ```text
+   /plugin marketplace add https://github.com/b0r1sp/beancount-plugin.git
+   ```
 
-Then reload, so the running session picks up the plugin's commands and MCP tools:
+2. Install the plugin:
 
-```text
-/reload-plugins
-```
+   ```text
+   /plugin install beancount@beancount
+   ```
 
-Use the full HTTPS URL rather than the `b0r1sp/beancount-plugin` shorthand — the shorthand
-resolves to `git@github.com`, which needs an SSH key. From a local clone:
-`/plugin marketplace add ./beancount-plugin`, then the same install.
+3. Load the plugin into the session:
 
-On first use, `uv` creates a virtualenv inside the plugin (beancount, beanquery, openpyxl, mcp),
-downloading a suitable Python if you don't have one. That takes ~30s once. You'll be asked to
-approve the MCP server; run `/reload-plugins` again if the tools still don't appear.
+   ```text
+   /reload-plugins
+   ```
 
-If the server fails to connect, run `/mcp` — the assistant shows the error the server printed. The
-usual causes are `uv` not being on the `PATH` the assistant was started with (restart it
-after installing uv) or no network on the very first run.
+Use the full HTTPS URL. Do not use the short form `b0r1sp/beancount-plugin`. The short form
+uses SSH, and SSH needs a key.
 
-Then create your book:
+To install from a local clone, use `/plugin marketplace add ./beancount-plugin`. Then do steps 2
+and 3.
+
+On the first start, uv makes a virtual environment in the plugin directory. This takes
+approximately 30 seconds. Claude Code asks you to approve the MCP server. Approve it. If the
+tools are not available after this, type `/reload-plugins` again.
+
+### If the server does not start
+
+1. Type `/mcp`. Claude Code shows the error from the server.
+2. Make sure that uv is on the `PATH`. If you installed uv after you started Claude Code,
+   restart Claude Code.
+3. Make sure that the computer has a network connection for the first start.
+
+### Create the book
+
+Type this command:
 
 ```text
 /beancount:init
@@ -84,89 +102,129 @@ Then create your book:
 
 ## Commands
 
-| Command | What it does |
+| Command | Function |
 |---|---|
-| `/beancount:init [name] [currency]` | Create the local book plus a starter chart of accounts. |
-| `/beancount:ingest <file or text>` | Import a bank/card statement (CSV, OFX/QFX, PDF), a receipt photo — or plain text — into validated transactions. |
-| `/beancount:report [html\|excel\|both] [as-of] [period-start]` | Generate a styled HTML report and/or an Excel workbook (balance sheet, income statement, transactions). |
-| `/beancount:status [question]` | Net worth, balances, recent changes — or answer a specific money question. |
-| `/beancount:assess [focus]` | Review the book: run rate, categories, changes, unusual entries, gaps in the data. |
-| `/beancount:undo [commit]` | Revert a change from git history. |
+| `/beancount:init [name] [currency]` | Creates the local book and a starter chart of accounts. |
+| `/beancount:ingest <file or text>` | Imports a bank or card statement (CSV, OFX/QFX, PDF), a receipt photo or a text description. The result is a set of correct transactions. |
+| `/beancount:report [html\|excel\|both] [as-of] [period-start]` | Makes an HTML report, an Excel workbook or the two. The report has a balance sheet, an income statement and the transactions. |
+| `/beancount:status [question]` | Shows the net worth, the balances and the recent changes. It can also answer a question about your money. |
+| `/beancount:assess [focus]` | Examines the book. It shows the run rate, the categories, the changes, unusual entries and gaps in the data. |
+| `/beancount:undo [commit]` | Reverts a change from the git history. |
 
-## Where your data lives
+## Location of your data
 
-| What | Where |
+| Data | Location |
 |---|---|
-| The book (a git repo of `.beancount` files) | `~/.beancount/main` — on Windows `C:\Users\<you>\.beancount\main` |
-| Reports | `<book>/reports/` (git-ignored) |
-| Staged statements and import proposals | `<book>/.git/beancount-imports/` (never committed) |
-| Receipt photos / PDFs | `~/.beancount/receipts/<sha256>` — kept outside the book so binaries don't bloat its git history |
+| The book (a git repository of `.beancount` files) | `~/.beancount/main`. On Windows: `C:\Users\<you>\.beancount\main` |
+| Reports | `<book>/reports/`. Git ignores this directory. |
+| Statements and import proposals before the import | `<book>/.git/beancount-imports/`. Git does not commit these files. |
+| Receipt photos and PDF files | `~/.beancount/receipts/<sha256>`. These files are outside the book. Thus, they do not make the git history large. |
 
-To keep the book somewhere else, set `BEANCOUNT_BOOK` to any local directory **before the assistant
-starts** (or put it in the `env` block of the plugin's `.mcp.json`):
+### Use a different directory
+
+Set the variable `BEANCOUNT_BOOK` to a local directory. Do this **before** you start Claude Code.
+You can also set the variable in the `env` block of the plugin file `.mcp.json`.
+
+On macOS or Linux:
 
 ```bash
-export BEANCOUNT_BOOK=~/finance/books      # macOS / Linux
+export BEANCOUNT_BOOK=~/finance/books
 ```
+
+On Windows (the setting applies to new terminals):
 
 ```powershell
-setx BEANCOUNT_BOOK "D:\finance\books"     # Windows (new terminals)
+setx BEANCOUNT_BOOK "D:\finance\books"
 ```
 
-Ask "where is my book?" (the `book_location` tool) to see which directory is in use and
-why. Because the book is plain text under git, you can back it up by pushing it to any remote you
-like.
+To see the directory that the plugin uses, ask Claude "where is my book?". Claude uses the
+`book_location` tool.
 
-## Browsing the book in Fava
+The book is a git repository of text files. To make a backup, push the repository to a remote.
 
-[Fava](https://beancount.github.io/fava/) is a web UI for Beancount ledgers. With uv installed
-there is nothing else to set up:
+## Examine the book in Fava
+
+[Fava](https://beancount.github.io/fava/) is a web interface for Beancount. Fava needs only uv.
+
+On macOS or Linux:
 
 ```bash
 uvx fava ~/.beancount/main/main.beancount
 ```
 
+On Windows:
+
 ```powershell
 uvx fava $env:USERPROFILE\.beancount\main\main.beancount
 ```
 
-Then open <http://localhost:5000>. Entries flagged with `!` show up there as pending. If you
-edit the ledger in Fava, commit those changes yourself (`git commit -am "..."` in the book
-directory) — the plugin only stages the files it writes.
+Then open <http://localhost:5000> in a browser. Fava shows the entries that Claude flags with `!`
+as pending.
 
-## MCP tools (for reference)
+If you change the ledger in Fava, commit the change yourself. In the book directory, type
+`git commit -am "<message>"`. The plugin adds to git only the files that it writes.
+
+## MCP tools
+
+The server has these tools:
 
 `book_location`, `create_book`, `book_status`, `list_accounts`, `get_ledger`, `open_accounts`,
 `add_transactions`, `add_directives`, `propose_transactions`, `commit_proposal`, `run_query`,
 `balances`, `assess_book`, `generate_report`, `history`, `revert`, `stage_receipt`,
-`propose_receipt_transaction`. A `bookkeeping` prompt and resource carry the bookkeeping rules
-for any MCP client.
+`propose_receipt_transaction`.
 
-`propose_transactions` is the statement importer: give it a CSV or OFX/QFX and the account it
-belongs to, and it parses it and returns a summary — the column mapping it detected, counts, what
-it flagged and each payee once — under a `proposal_id`. `commit_proposal` then writes that
-proposal with the accounts you chose per payee, validated and committed like every write. The
-rows never pass through the model, so a statement's size is not limited by what a model can copy.
+The server also has a `bookkeeping` prompt and a `bookkeeping` resource. They contain the
+bookkeeping rules for each MCP client.
 
-`stage_receipt` and `propose_receipt_transaction` are the receipt path. The first keeps the photo
-or PDF as evidence and returns a reference; the second turns what the assistant read off it into a
-proposed entry with anything uncertain flagged rather than filled in. Neither does OCR: the
-reading is the model's own, on purpose.
+### Statement import
 
-None of `propose_transactions`, `stage_receipt` or `propose_receipt_transaction` writes;
-`commit_proposal`, `add_transactions`, `open_accounts`, `add_directives` and `revert` do.
+1. `propose_transactions` reads a CSV, OFX or QFX statement for one account. It does not change
+   the book. It returns a summary with a `proposal_id`. The summary shows the column mapping,
+   the counts, the flagged rows and each payee one time.
+2. You select an account for each payee.
+3. `commit_proposal` writes the proposal with these accounts. The server checks the result and
+   makes one commit.
+
+The rows do not go through the model. Thus, the model does not limit the size of a statement.
+
+### Receipt import
+
+1. `stage_receipt` keeps the photo or the PDF file as evidence. It returns a reference.
+2. Claude reads the receipt.
+3. `propose_receipt_transaction` makes a proposed entry from the data that Claude read. If a
+   value is not certain, the tool flags the value. It does not supply a value.
+
+The tools do not do OCR. Claude reads the receipt.
+
+### Tools that change the book
+
+These tools change the book: `commit_proposal`, `add_transactions`, `open_accounts`,
+`add_directives` and `revert`.
+
+These tools do not change the book: `propose_transactions`, `stage_receipt` and
+`propose_receipt_transaction`.
 
 ## Development
 
+Use these commands in the `plugin` directory.
+
+To start the stdio server:
+
 ```bash
-cd plugin
-uv run beancount-mcp                                  # runs the stdio server
-BEANCOUNT_BOOK=/tmp/testbook uv run beancount-mcp     # against a scratch book
+uv run beancount-mcp
 ```
 
-Layout:
+To start the server with a test book:
+
+```bash
+BEANCOUNT_BOOK=/tmp/testbook uv run beancount-mcp
+```
+
+Structure of the repository:
 
 ```
+.claude-plugin/marketplace.json   marketplace entry
+plugin/.claude-plugin/plugin.json plugin manifest
 plugin/.mcp.json                  starts the server with `uv run`
 plugin/pyproject.toml             Python package (beancount-mcp)
 plugin/mcp/beancount_mcp/         the MCP server

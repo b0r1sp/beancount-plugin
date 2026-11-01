@@ -99,7 +99,7 @@ def create_book(name: str = "My Books", currency: str = "USD", path: str = "") -
     res = ledger.init(name=name, currency=currency)
     note = ""
     if path and Path(ledger.root).resolve() != default_book_path().resolve():
-        note = (f"\nSet {BOOK_ENV}={ledger.root} (and restart the assistant) so the "
+        note = (f"\nSet {BOOK_ENV}={ledger.root} (and restart Claude Code) so the "
                 f"other tools use this book.")
     return f"Created book '{name}' ({currency}) at {ledger.root} [commit {res.commit}]{note}"
 
@@ -372,7 +372,7 @@ def generate_report(format: str = "html", as_of: str = "", period_start: str = "
 #
 # Two tools, not one. `stage_receipt` moves bytes and returns a REFERENCE;
 # `propose_receipt_transaction` turns a reading of those bytes into a proposal.
-# The reading itself (OCR) is the model's own vision: the assistant reads the
+# The reading itself (OCR) is the model's own vision: Claude Code reads the
 # file, and nothing here looks at the image.
 #
 # ⛔ NEITHER TOOL WRITES. `add_transactions` remains the only write path, so the

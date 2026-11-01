@@ -89,7 +89,7 @@ else:
 _GIT_MISSING = (
     "`git` not found. This plugin keeps every book as a git repository, so git "
     f"is required. Install it with:\n  {_GIT_INSTALL}\n"
-    "then restart the assistant. Nothing was written."
+    "then restart Claude Code. Nothing was written."
 )
 
 
@@ -924,7 +924,7 @@ class Ledger:
 
         * a per-root :class:`threading.Lock` for threads in this process;
         * ``flock`` on a file under ``.git/`` for a second *process* — another
-          assistant session pointed at the same directory, a cron, you in a shell.
+          Claude session pointed at the same directory, a cron, you in a shell.
           (``flock`` is POSIX-only; on Windows only the thread lock applies.)
 
         ``flock`` is released by the kernel when the holder dies, so unlike a

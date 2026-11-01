@@ -1,8 +1,8 @@
-"""Facts about a book, computed — so that the assistant reports rather than guesses.
+"""Facts about a book, computed — so that Claude reports rather than guesses.
 
 WHY THIS FILE IS SHAPED THE WAY IT IS
 -------------------------------------
-"Review my books and tell me what you see" is the feature. The
+"Have Claude review my books and tell me what it sees" is the feature. The
 danger in it is specific and it is not hypothetical: a language model handed a
 ledger will produce a confident number. "Your burn rate is $4,200/month" off
 three weeks of data. "Spending on software is up 40%" when the comparison month

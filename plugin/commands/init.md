@@ -19,7 +19,7 @@ Do this in order:
 2. **Create the book.** Call `create_book` with `name` (from `$1`, else ask, else "My Books") and
    `currency` (`$2` uppercased, else "USD"). It goes in the directory `book_location` named —
    `$BEANCOUNT_BOOK` if set, otherwise `~/.beancount/main`. If the user wants it somewhere else,
-   tell them to set `BEANCOUNT_BOOK` to that directory and restart the assistant rather than passing
+   tell them to set `BEANCOUNT_BOOK` to that directory and restart Claude Code rather than passing
    a different `path`: the other tools always use `BEANCOUNT_BOOK` / the default.
    If it fails with "`git` not found", relay the install command it gives and stop.
 

@@ -1,6 +1,6 @@
 # Packaging for the beancount-plugin MCP server.
 #
-# The plugin starts the server with `uv run --project <plugin dir>
+# Claude Code starts the server with `uv run --project ${CLAUDE_PLUGIN_ROOT}
 # beancount-mcp` (see .mcp.json), so uv reads this file, provisions a suitable
 # Python if needed, installs the dependencies into plugin/.venv and runs the
 # `beancount-mcp` script below — the same way on Windows, macOS and Linux.
@@ -25,6 +25,7 @@ keywords = [
   "bookkeeping",
   "double-entry",
   "ledger",
+  "claude",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
