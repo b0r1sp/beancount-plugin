@@ -1,10 +1,14 @@
 # Beancount plugin for Claude Code
 
-This plugin makes Claude Code a bookkeeper. The ledger stays on your computer.
+This plugin makes Claude Code a bookkeeper. It uses
+[Beancount](https://github.com/beancount/beancount). Beancount is an open-source, command-line
+[double-entry bookkeeping system](https://beancount.io/de/blog/2025/09/02/journal-entries-in-beancount).
+With Beancount, you record financial transactions in plain text files. The ledger stays on your
+computer.
 
 The plugin has three parts:
 
-- An **MCP server**. It keeps a [Beancount](https://beancount.github.io/) ledger (the "book") in
+- An **MCP server**. It keeps a [Beancount](https://github.com/beancount/beancount) ledger (the "book") in
   a local directory. The book is a git repository. Before each change, the server checks the
   ledger with `bean-check`. The server records only a correct change, and it makes a git commit
   for each change. Thus, you can undo each change.
