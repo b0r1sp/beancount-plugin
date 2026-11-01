@@ -15,11 +15,116 @@ The plugin has three parts:
 The plugin does not send data to a server. It does not use an account or an API key. The book is
 a directory of text files. You own it.
 
+## Commands
+
+| Command | Function |
+|---|---|
+| `/beancount:init [name] [currency]` | Creates the local book and a starter chart of accounts. |
+| `/beancount:ingest <file or text>` | Imports a bank or card statement (CSV, OFX/QFX, PDF), a receipt photo or a text description. The result is a set of correct transactions. |
+| `/beancount:report [html\|excel\|both] [as-of] [period-start]` | Makes an HTML report, an Excel workbook or the two. The report has a balance sheet, an income statement and the transactions. |
+| `/beancount:status [question]` | Shows the net worth, the balances and the recent changes. It can also answer a question about your money. |
+| `/beancount:assess [focus]` | Examines the book. It shows the run rate, the categories, the changes, unusual entries and gaps in the data. |
+| `/beancount:undo [commit]` | Reverts a change from the git history. |
+
+## Install the plugin
+
+Before you install the plugin, install uv and git. Refer to [Requirements](#requirements).
+
+The MCP server of the plugin runs on your computer. Thus, the plugin works in these applications:
+
+- The Claude desktop app: Cowork and the **Code** tab. Use this procedure if you are a user.
+- Claude Code in a terminal or an IDE. Use this procedure if you are a developer.
+
+The plugin does not work in a chat on claude.ai or in a cloud session. These applications cannot
+start a program on your computer.
+
+### Claude desktop app (Cowork and Code)
+
+1. In the sidebar, select **Customize**. Then select **Plugins**.
+2. Select **Add**. Then select **Add marketplace**.
+3. Type the URL of the repository and confirm:
+
+   ```text
+   https://github.com/b0r1sp/beancount-plugin
+   ```
+
+4. Select **Discover**. Find the plugin `beancount` and select it.
+5. Select **Add** (or **Install**).
+6. Start a new Cowork task, or open a local session in the **Code** tab. The plugin loads when
+   the task or the session starts.
+7. Type this command to create the book:
+
+   ```text
+   /beancount:init
+   ```
+
+The plugin is saved to your account. Thus, it is also available in Claude Code when you sign in
+with the same account.
+
+On the first start, uv downloads Python and the dependencies. This takes approximately 30
+seconds.
+
+If the tools are not available:
+
+1. Open the plugin in **Customize** > **Plugins**. Make sure that the plugin is enabled.
+2. Make sure that uv is installed. If you installed uv after you started the desktop app, quit
+   the desktop app and start it again.
+3. Make sure that the computer has a network connection for the first start.
+
+To get a new version of the plugin, open the marketplace in **Customize** > **Plugins** and
+select **Check for updates**.
+
+### Claude Code (terminal or IDE)
+
+Type each command separately in Claude Code. Do not paste the commands together. Claude Code
+reads a paste of many lines as one slash command, and the install fails.
+
+1. Add the marketplace:
+
+   ```text
+   /plugin marketplace add https://github.com/b0r1sp/beancount-plugin.git
+   ```
+
+2. Install the plugin:
+
+   ```text
+   /plugin install beancount@beancount
+   ```
+
+3. Load the plugin into the session:
+
+   ```text
+   /reload-plugins
+   ```
+
+4. Create the book:
+
+   ```text
+   /beancount:init
+   ```
+
+Use the full HTTPS URL. Do not use the short form `b0r1sp/beancount-plugin`. The short form can
+use SSH, and SSH needs a key.
+
+To install from a local clone, use `/plugin marketplace add ./beancount-plugin`. Then do steps 2
+to 4.
+
+On the first start, uv makes a virtual environment in the plugin directory. This takes
+approximately 30 seconds. Claude Code asks you to approve the MCP server. Approve it. If the
+tools are not available after this, type `/reload-plugins` again.
+
+If the server does not start:
+
+1. Type `/mcp`. Claude Code shows the error from the server.
+2. Make sure that uv is on the `PATH`. If you installed uv after you started Claude Code,
+   restart Claude Code.
+3. Make sure that the computer has a network connection for the first start.
+
 ## Requirements
 
 | Tool | Function |
 |---|---|
-| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Runs the plugin. |
+| The Claude desktop app (Cowork or the **Code** tab) or [Claude Code](https://docs.claude.com/en/docs/claude-code) | Runs the plugin. |
 | [uv](https://docs.astral.sh/uv/) | Starts the MCP server. On the first start, uv downloads Python 3.11+ and the dependencies. |
 | [git](https://git-scm.com/) | Keeps the history of the book. |
 
@@ -52,78 +157,24 @@ Usually, git is already on your computer. On Windows, Claude Code usually needs 
 If git is not available, the first change to the book stops. The error message shows the install
 command for your operating system. The book does not change.
 
-## Install the plugin
-
-Type each command separately in Claude Code. Do not paste the commands together. Claude Code
-reads a paste of many lines as one slash command, and the install fails.
-
-1. Add the marketplace:
-
-   ```text
-   /plugin marketplace add https://github.com/b0r1sp/beancount-plugin.git
-   ```
-
-2. Install the plugin:
-
-   ```text
-   /plugin install beancount@beancount
-   ```
-
-3. Load the plugin into the session:
-
-   ```text
-   /reload-plugins
-   ```
-
-Use the full HTTPS URL. Do not use the short form `b0r1sp/beancount-plugin`. The short form
-uses SSH, and SSH needs a key.
-
-To install from a local clone, use `/plugin marketplace add ./beancount-plugin`. Then do steps 2
-and 3.
-
-On the first start, uv makes a virtual environment in the plugin directory. This takes
-approximately 30 seconds. Claude Code asks you to approve the MCP server. Approve it. If the
-tools are not available after this, type `/reload-plugins` again.
-
-### If the server does not start
-
-1. Type `/mcp`. Claude Code shows the error from the server.
-2. Make sure that uv is on the `PATH`. If you installed uv after you started Claude Code,
-   restart Claude Code.
-3. Make sure that the computer has a network connection for the first start.
-
-### Create the book
-
-Type this command:
-
-```text
-/beancount:init
-```
-
-## Commands
-
-| Command | Function |
-|---|---|
-| `/beancount:init [name] [currency]` | Creates the local book and a starter chart of accounts. |
-| `/beancount:ingest <file or text>` | Imports a bank or card statement (CSV, OFX/QFX, PDF), a receipt photo or a text description. The result is a set of correct transactions. |
-| `/beancount:report [html\|excel\|both] [as-of] [period-start]` | Makes an HTML report, an Excel workbook or the two. The report has a balance sheet, an income statement and the transactions. |
-| `/beancount:status [question]` | Shows the net worth, the balances and the recent changes. It can also answer a question about your money. |
-| `/beancount:assess [focus]` | Examines the book. It shows the run rate, the categories, the changes, unusual entries and gaps in the data. |
-| `/beancount:undo [commit]` | Reverts a change from the git history. |
-
 ## Location of your data
 
 | Data | Location |
 |---|---|
-| The book (a git repository of `.beancount` files) | `~/.beancount/main`. On Windows: `C:\Users\<you>\.beancount\main` |
+| The book (a git repository of `.beancount` files) | Default: `~/.beancount/main`. On Windows: `C:\Users\<you>\.beancount\main`. You can select a different directory (see below). |
 | Reports | `<book>/reports/`. Git ignores this directory. |
 | Statements and import proposals before the import | `<book>/.git/beancount-imports/`. Git does not commit these files. |
 | Receipt photos and PDF files | `~/.beancount/receipts/<sha256>`. These files are outside the book. Thus, they do not make the git history large. |
 
 ### Use a different directory
 
-Set the variable `BEANCOUNT_BOOK` to a local directory. Do this **before** you start Claude Code.
-You can also set the variable in the `env` block of the plugin file `.mcp.json`.
+You can keep the book in any local directory that you select. For example, use a directory in
+your documents, on a second disk or in a folder that you synchronize. The default directory is
+only a recommendation.
+
+To select the directory, set the variable `BEANCOUNT_BOOK` to the full path of the directory. Do
+this **before** you start Claude Code or the desktop app. You can also set the variable in the
+`env` block of the plugin file `.mcp.json`.
 
 On macOS or Linux:
 
