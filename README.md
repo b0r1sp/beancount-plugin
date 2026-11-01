@@ -1,23 +1,57 @@
 # Beancount plugin for Claude Code
 
 This plugin makes Claude Code a bookkeeper. It uses
-[Beancount](https://github.com/beancount/beancount). Beancount is an open-source, command-line
+[Beancount](https://github.com/beancount/beancount), which is an open-source, command-line
 [double-entry bookkeeping system](https://beancount.io/de/blog/2025/09/02/journal-entries-in-beancount).
 With Beancount, you record financial transactions in plain text files. The ledger stays on your
 computer.
 
+The plugin is a wrapper around Beancount. It does not replace Beancount, and it does not do its
+own bookkeeping. It gives Claude access to Beancount through MCP tools.
+
 The plugin has three parts:
 
-- An **MCP server**. It keeps a [Beancount](https://github.com/beancount/beancount) ledger (the "book") in
-  a local directory. The book is a git repository. Before each change, the server checks the
-  ledger with `bean-check`. The server records only a correct change, and it makes a git commit
-  for each change. Thus, you can undo each change.
+- An **MCP server**. It keeps a Beancount ledger (the "book") in a local directory. The book is a
+  git repository. Before each change, the server checks the ledger with `bean-check`. The server
+  records only a correct change, and it makes a git commit for each change. Thus, you can undo
+  each change.
 - **Slash commands**. They create the book, import statements and receipts, and make reports.
 - A **skill** (`beancount-accounting`). It gives Claude the rules for correct double-entry
   transactions.
 
-The plugin does not send data to a server. It does not use an account or an API key. The book is
-a directory of text files. You own it.
+## How it works
+
+![Architecture: Claude translates requests into MCP tool calls; Beancount validates and calculates on your computer](docs/architecture.png)
+
+### Beancount does the bookkeeping, not the LLM
+
+**Beancount and the code of the plugin process all transactions deterministically.** The same
+input always gives the same result. The LLM does not do these steps:
+
+- **Validation.** `bean-check` examines each change before the server records it. If a
+  transaction does not balance, or if an account is not open, the server rejects the change. The
+  book does not change.
+- **Calculation.** Balances, totals, currency conversions and reports come from Beancount
+  (`bean-query`). The LLM does not calculate a number.
+- **Statement import.** The plugin reads CSV, OFX and QFX statements with its own parser. The rows
+  do not go through the LLM. Thus, the LLM cannot change an amount or a date.
+- **History.** git records each accepted change. You can see each change and undo it.
+
+### The role of the LLM: a translator
+
+Claude is a translator between you and the MCP tools:
+
+1. Claude reads your request, for example "I paid 54.20 EUR for groceries" or a bank statement.
+2. Claude changes the request into a call to an MCP tool.
+3. Beancount and the plugin do the work and send back a result.
+4. Claude changes the result into words for you.
+
+Claude also selects the accounts (for example `Expenses:Food`). For a text description or a
+receipt, Claude writes the proposed entry. The plugin tells Claude to show you each proposal
+before the server writes it. Beancount then checks the entry. Claude cannot record an entry that Beancount rejects.
+
+The plugin does not send data to a server. The book stays on your computer. Claude sees only the
+data that it reads for you, for example a statement summary or a query result.
 
 ## Commands
 
@@ -321,6 +355,7 @@ plugin/pyproject.toml             Python package (beancount-mcp)
 plugin/mcp/beancount_mcp/         the MCP server
 plugin/commands/                  slash commands
 plugin/skills/                    the beancount-accounting skill
+docs/architecture.html            source of the architecture diagram (docs/architecture.png)
 ```
 
 ## License
