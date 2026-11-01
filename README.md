@@ -21,7 +21,7 @@ The plugin has three parts:
 
 ## How it works
 
-![Architecture: Claude translates requests into MCP tool calls; Beancount validates and calculates on your computer](docs/architecture.png)
+![Architecture: Claude translates requests into MCP tool calls; Beancount validates and calculates on your computer](docs/architecture-v3.png)
 
 ### Beancount does the bookkeeping, not the LLM
 
@@ -355,7 +355,7 @@ plugin/pyproject.toml             Python package (beancount-mcp)
 plugin/mcp/beancount_mcp/         the MCP server
 plugin/commands/                  slash commands
 plugin/skills/                    the beancount-accounting skill
-docs/architecture.html            source of the architecture diagram (docs/architecture.png)
+docs/architecture.html            source of the architecture diagram (docs/architecture-v3.png)
 ```
 
 ## License
