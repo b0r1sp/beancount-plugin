@@ -19,7 +19,8 @@ a directory of text files. You own it.
 
 | Command | Function |
 |---|---|
-| `/beancount:init [name] [currency]` | Creates the local book and a starter chart of accounts. |
+| `/beancount:init [name] [currency]` | Creates the local book and a starter chart of accounts. It asks you where to keep the book. |
+| `/beancount:location [path\|default]` | Shows the directory of the book, or sets a new directory. |
 | `/beancount:ingest <file or text>` | Imports a bank or card statement (CSV, OFX/QFX, PDF), a receipt photo or a text description. The result is a set of correct transactions. |
 | `/beancount:report [html\|excel\|both] [as-of] [period-start]` | Makes an HTML report, an Excel workbook or the two. The report has a balance sheet, an income statement and the transactions. |
 | `/beancount:status [question]` | Shows the net worth, the balances and the recent changes. It can also answer a question about your money. |
@@ -164,6 +165,7 @@ command for your operating system. The book does not change.
 | The book (a git repository of `.beancount` files) | Default: `~/.beancount/main`. On Windows: `C:\Users\<you>\.beancount\main`. You can select a different directory (see below). |
 | Reports | `<book>/reports/`. Git ignores this directory. |
 | Statements and import proposals before the import | `<book>/.git/beancount-imports/`. Git does not commit these files. |
+| The saved directory of the book | `~/.beancount/config.json` |
 | Receipt photos and PDF files | `~/.beancount/receipts/<sha256>`. These files are outside the book. Thus, they do not make the git history large. |
 
 ### Use a different directory
@@ -172,9 +174,35 @@ You can keep the book in any local directory that you select. For example, use a
 your documents, on a second disk or in a folder that you synchronize. The default directory is
 only a recommendation.
 
-To select the directory, set the variable `BEANCOUNT_BOOK` to the full path of the directory. Do
-this **before** you start Claude Code or the desktop app. You can also set the variable in the
-`env` block of the plugin file `.mcp.json`.
+To select the directory, use one of these procedures:
+
+- When you create the book with `/beancount:init`, give the full path of the directory.
+- For a book that already exists, type the command with the full path of the directory:
+
+  ```text
+  /beancount:location /Users/ana/Documents/books
+  ```
+
+  On Windows, use a path such as `D:\finance\books`.
+
+- You can also ask Claude in your own words, for example "keep my book in
+  D:\finance\books".
+
+The plugin saves the directory in `~/.beancount/config.json`. All tools use the new directory
+immediately. You do not have to restart the application.
+
+To go back to the default directory, type `/beancount:location default`.
+
+The command does not move the book. To move a book, first move the full directory to the new
+location. Include the hidden `.git` directory. Then set the new location.
+
+`/beancount:init` does not overwrite files. If the directory already contains files with the
+same names as the files of a book, the command stops and shows the names.
+
+#### Developers: the environment variable
+
+The variable `BEANCOUNT_BOOK` overrides the saved directory. Set it before you start Claude Code.
+You can also set it in the `env` block of the plugin file `.mcp.json`.
 
 On macOS or Linux:
 
@@ -187,6 +215,12 @@ On Windows (the setting applies to new terminals):
 ```powershell
 setx BEANCOUNT_BOOK "D:\finance\books"
 ```
+
+The plugin uses the first available value in this sequence:
+
+1. The variable `BEANCOUNT_BOOK`.
+2. The directory that you saved with `/beancount:location` or `/beancount:init`.
+3. The default directory `~/.beancount/main`.
 
 To see the directory that the plugin uses, ask Claude "where is my book?". Claude uses the
 `book_location` tool.
@@ -219,7 +253,7 @@ If you change the ledger in Fava, commit the change yourself. In the book direct
 
 The server has these tools:
 
-`book_location`, `create_book`, `book_status`, `list_accounts`, `get_ledger`, `open_accounts`,
+`book_location`, `set_book_location`, `create_book`, `book_status`, `list_accounts`, `get_ledger`, `open_accounts`,
 `add_transactions`, `add_directives`, `propose_transactions`, `commit_proposal`, `run_query`,
 `balances`, `assess_book`, `generate_report`, `history`, `revert`, `stage_receipt`,
 `propose_receipt_transaction`.
@@ -249,8 +283,10 @@ The tools do not do OCR. Claude reads the receipt.
 
 ### Tools that change the book
 
-These tools change the book: `commit_proposal`, `add_transactions`, `open_accounts`,
+These tools change the book: `create_book`, `commit_proposal`, `add_transactions`, `open_accounts`,
 `add_directives` and `revert`.
+
+`set_book_location` changes only the setting in `~/.beancount/config.json`. It does not change a book.
 
 These tools do not change the book: `propose_transactions`, `stage_receipt` and
 `propose_receipt_transaction`.

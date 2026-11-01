@@ -4,8 +4,11 @@ Exposes a local, git-backed Beancount ledger (a "book") as MCP tools so an AI
 agent can read and safely write double-entry books. Every mutating tool
 validates with bean-check and commits to git; a rejected change never lands.
 
-The book is a directory on this machine: ``$BEANCOUNT_BOOK`` if set, otherwise
-``~/.beancount/main`` (on Windows, ``%USERPROFILE%\\.beancount\\main``).
+The book is a directory on this machine, chosen in this order:
+
+1. ``$BEANCOUNT_BOOK``, if set;
+2. the directory saved by ``set_book_location`` in ``~/.beancount/config.json``;
+3. ``~/.beancount/main`` (on Windows, ``%USERPROFILE%\\.beancount\\main``).
 """
 from __future__ import annotations
 
@@ -52,17 +55,76 @@ def _tool(title: str, kind: str, *, destructive: bool, idempotent: bool) -> dict
     }
 
 
-def default_book_path() -> Path:
-    """Where the book lives: $BEANCOUNT_BOOK, else ~/.beancount/main."""
-    configured = os.environ.get(BOOK_ENV, "").strip()
-    if configured:
-        return Path(configured).expanduser()
+CONFIG_KEY = "book"
+
+
+def config_path() -> Path:
+    """The plugin's settings file. Outside every book, so no book commits it."""
+    return Path.home() / ".beancount" / "config.json"
+
+
+def builtin_book_path() -> Path:
     return Path.home() / ".beancount" / "main"
 
 
-def _book(path: str = "") -> Ledger:
-    """The local book. Resolved per call, so a changed env takes effect at once."""
-    return Ledger(Path(path).expanduser() if path else default_book_path())
+def _read_config() -> dict:
+    try:
+        data = json.loads(config_path().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        raise LedgerError(
+            f"Cannot read {config_path()}: {e}. Fix or delete the file, or call "
+            f"set_book_location again."
+        ) from None
+    return data if isinstance(data, dict) else {}
+
+
+def _write_config(data: dict) -> None:
+    target = config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, target)
+
+
+def _book_source() -> tuple[Path, str]:
+    """The book directory and what chose it, in precedence order."""
+    env = os.environ.get(BOOK_ENV, "").strip()
+    if env:
+        return Path(env).expanduser(), f"the environment variable {BOOK_ENV}"
+    saved = str(_read_config().get(CONFIG_KEY, "")).strip()
+    if saved:
+        return Path(saved).expanduser(), f"set_book_location (saved in {config_path()})"
+    return builtin_book_path(), "the default"
+
+
+def default_book_path() -> Path:
+    """Where the book lives: $BEANCOUNT_BOOK, else the saved location, else
+    ~/.beancount/main. Resolved on every call, so a change applies at once."""
+    return _book_source()[0]
+
+
+def _normalise_location(path: str) -> Path:
+    """An absolute, user-expanded directory path, or a LedgerError saying why not.
+
+    Relative paths are refused: they would resolve against whatever directory
+    the server happened to start in, which the user cannot see.
+    """
+    candidate = Path(path.strip().strip('"').strip("'")).expanduser()
+    if not candidate.is_absolute():
+        raise LedgerError(
+            f"'{path}' is not a full path. Give the full path of a directory, "
+            f"for example {Path.home() / 'Documents' / 'books'}."
+        )
+    if candidate.exists() and not candidate.is_dir():
+        raise LedgerError(f"{candidate} is a file, not a directory.")
+    return candidate
+
+
+def _book() -> Ledger:
+    """The local book. Resolved per call, so a new location applies at once."""
+    return Ledger(default_book_path())
 
 
 def _require(ledger: Ledger) -> Ledger:
@@ -78,29 +140,79 @@ def _require(ledger: Ledger) -> Ledger:
 @mcp.tool(**_tool("Where is the book", 'read', destructive=False, idempotent=True))
 def book_location() -> str:
     """Show which local directory this plugin reads and writes, and why."""
-    root = default_book_path()
-    source = f"${BOOK_ENV}" if os.environ.get(BOOK_ENV, "").strip() else "the default"
+    root, source = _book_source()
     state = "exists" if Ledger(root).exists() else "does not exist yet — call create_book"
     return f"Book directory: {root}\nChosen by: {source}\nState: {state}"
+
+
+@mcp.tool(**_tool("Choose where the book is", 'write', destructive=False, idempotent=True))
+def set_book_location(path: str) -> str:
+    """Choose the local directory of the book. Every tool uses it from the next call.
+
+    `path` is the FULL path of a directory, e.g. '/Users/ana/Documents/books'
+    or 'D:\\finance\\books'. `~` is expanded. The directory need not exist yet:
+    if there is no book in it, call `create_book` next. Give an empty `path`
+    to forget the choice and go back to the default (~/.beancount/main).
+
+    The choice is saved in ~/.beancount/config.json. It does not move or copy
+    an existing book. The environment variable BEANCOUNT_BOOK, if set, still
+    wins over this setting.
+    """
+    config = _read_config()
+    if not path.strip():
+        config.pop(CONFIG_KEY, None)
+        _write_config(config)
+        chosen = builtin_book_path()
+        head = f"Saved location removed. The book is now the default: {chosen}"
+    else:
+        chosen = _normalise_location(path)
+        config[CONFIG_KEY] = str(chosen)
+        _write_config(config)
+        head = f"Book location set to {chosen} (saved in {config_path()})."
+    lines = [head]
+    if os.environ.get(BOOK_ENV, "").strip():
+        lines.append(
+            f"⚠️ {BOOK_ENV} is set to {os.environ[BOOK_ENV]} and overrides this "
+            f"setting, so the tools still use that directory. Remove the variable "
+            f"and restart to use the new location."
+        )
+        return "\n".join(lines)
+    if Ledger(chosen).exists():
+        lines.append("There is a book there. Every tool uses it now.")
+    elif chosen.is_dir() and any(chosen.iterdir()):
+        lines.append(
+            "The directory exists but holds no book. Call create_book to make one "
+            "there (it refuses rather than overwrite a file), or choose an empty "
+            "directory."
+        )
+    else:
+        lines.append("There is no book there yet. Call create_book to make one.")
+    return "\n".join(lines)
 
 
 @mcp.tool(**_tool("Create a local book", 'write', destructive=False, idempotent=False))
 def create_book(name: str = "My Books", currency: str = "USD", path: str = "") -> str:
     """Initialise a new, empty book (a git-backed Beancount ledger) on this machine.
 
-    `path` is optional: a local directory to create the book in. It defaults
-    to $BEANCOUNT_BOOK, or ~/.beancount/main. NOTE: the other tools always use
-    $BEANCOUNT_BOOK / the default — a book created elsewhere is only used once
-    BEANCOUNT_BOOK points at it.
+    `path` is optional: the full path of a local directory to create the book
+    in. When given, it is also saved as the book location (as
+    `set_book_location` does), so every other tool uses the new book. Without
+    it, the book goes in the current location (see `book_location`).
 
     Safe to call once per book; errors if a book already exists at the location.
     """
-    ledger = _book(path)
+    target = _normalise_location(path) if path.strip() else None
+    ledger = Ledger(target) if target else _book()
     res = ledger.init(name=name, currency=currency)
     note = ""
-    if path and Path(ledger.root).resolve() != default_book_path().resolve():
-        note = (f"\nSet {BOOK_ENV}={ledger.root} (and restart Claude Code) so the "
-                f"other tools use this book.")
+    if target is not None:
+        config = _read_config()
+        config[CONFIG_KEY] = str(target)
+        _write_config(config)
+        note = f"\nSaved as the book location in {config_path()}."
+        if os.environ.get(BOOK_ENV, "").strip():
+            note += (f"\n⚠️ {BOOK_ENV} is set and overrides the saved location. "
+                     f"Remove it and restart to use this book.")
     return f"Created book '{name}' ({currency}) at {ledger.root} [commit {res.commit}]{note}"
 
 

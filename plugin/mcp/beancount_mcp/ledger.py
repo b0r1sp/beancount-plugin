@@ -865,6 +865,18 @@ class Ledger:
         for code in currencies:
             if not _OPERATING_CURRENCY_RE.fullmatch(code):
                 raise LedgerError(f"Not a currency code: {code!r}")
+        # The location is the user's choice, so it may already hold files.
+        # Never overwrite one: refuse and name it instead.
+        taken = [
+            f for f in (ACCOUNTS_FILE, TRANSACTIONS_FILE, PRICES_FILE, ".gitignore")
+            if (self.root / f).exists()
+        ]
+        if taken:
+            raise LedgerError(
+                f"Not creating a book in {self.root}: it already has "
+                f"{', '.join(taken)}, which a new book would overwrite. Choose an "
+                f"empty directory, or move those files away."
+            )
         self.root.mkdir(parents=True, exist_ok=True)
         # Tolerance options travel with every book, whatever its operating
         # currency: a USD book with one JPY card needs them as much as a VND
