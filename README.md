@@ -21,7 +21,7 @@ The plugin has three parts:
 
 ## How it works
 
-![Architecture: Claude translates requests into MCP tool calls; Beancount validates and calculates on your computer](docs/architecture-v3.png)
+![Architecture: Claude translates requests into MCP tool calls; Beancount validates and calculates on your computer](docs/architecture-v4.png)
 
 ### Beancount does the bookkeeping, not the LLM
 
@@ -100,8 +100,8 @@ start a program on your computer.
 The plugin is saved to your account. Thus, it is also available in Claude Code when you sign in
 with the same account.
 
-On the first start, uv downloads Python and the dependencies. This takes approximately 30
-seconds.
+On the first start, uv downloads Python and the dependencies, Beancount included. This takes
+approximately 30 seconds.
 
 If the tools are not available:
 
@@ -148,7 +148,8 @@ use SSH, and SSH needs a key.
 To install from a local clone, use `/plugin marketplace add ./beancount-plugin`. Then do steps 2
 to 4.
 
-On the first start, uv makes a virtual environment in the plugin directory. This takes
+On the first start, uv makes a virtual environment in the plugin directory and installs
+Beancount and the other dependencies into it. This takes
 approximately 30 seconds. Claude Code asks you to approve the MCP server. Approve it. If the
 tools are not available after this, type `/reload-plugins` again.
 
@@ -166,6 +167,17 @@ If the server does not start:
 | The Claude desktop app (Cowork or the **Code** tab) or [Claude Code](https://docs.claude.com/en/docs/claude-code) | Runs the plugin. |
 | [uv](https://docs.astral.sh/uv/) | Starts the MCP server. On the first start, uv downloads Python 3.11+ and the dependencies. |
 | [git](https://git-scm.com/) | Keeps the history of the book. |
+
+You do not have to install Beancount. The plugin installs its own copy:
+
+- On the first start, uv installs Beancount (`beancount`, with `bean-check`), `beanquery`
+  (`bean-query`), `openpyxl` and `mcp`. The versions are in `plugin/pyproject.toml`.
+- uv puts these packages in a private virtual environment in the plugin directory
+  (`plugin/.venv`). It does not change the Python installation of your computer.
+- If Beancount is already on your computer, the plugin does not use it and does not change it.
+  The book is plain Beancount text. Thus, the two versions can read the same book.
+- Fava is not part of the plugin. `uvx fava` gets Fava separately (see
+  [Examine the book in Fava](#examine-the-book-in-fava)).
 
 ### Install uv
 
@@ -355,7 +367,7 @@ plugin/pyproject.toml             Python package (beancount-mcp)
 plugin/mcp/beancount_mcp/         the MCP server
 plugin/commands/                  slash commands
 plugin/skills/                    the beancount-accounting skill
-docs/architecture.html            source of the architecture diagram (docs/architecture-v3.png)
+docs/architecture.html            source of the architecture diagram (docs/architecture-v4.png)
 ```
 
 ## License
