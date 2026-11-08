@@ -316,10 +316,13 @@ bookkeeping rules for each MCP client.
 1. `propose_transactions` reads a CSV, OFX or QFX statement for one account. It does not change
    the book. It returns a summary with a `proposal_id`. The summary shows the column mapping,
    the counts, the flagged rows and each payee one time.
-2. You select an account for each payee. If the statement has an IBAN column (for example a CSV
-   export of a German Girokonto), the plugin identifies each payee by the IBAN of the
-   counterparty, not by the name. The name of a counterparty can change from one booking to the
-   next. The IBAN does not change. Each entry records the IBAN as `counterparty-iban` metadata.
+2. You select an account for each payee. If the statement has an IBAN column, the plugin
+   identifies each payee by the IBAN of the counterparty, not by the name. Statements from
+   countries that use IBANs usually have this column, for example a CSV export of a German
+   Girokonto. The name of a counterparty can change from one booking to the next. The IBAN does
+   not change. Each entry records the IBAN as `counterparty-iban` metadata. A row without an IBAN
+   (for example a card payment, or a statement from a country without IBANs) is identified by
+   the name.
 3. `commit_proposal` writes the proposal with these accounts. The server checks the result and
    makes one commit.
 

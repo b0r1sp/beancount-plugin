@@ -390,9 +390,9 @@ def propose_transactions(
     what evidence, including whether the running balance confirmed the sign),
     what was `flagged` and why, and `payees` — each distinct payee once, with
     how many rows and the net amount. A payee is identified by the
-    counterparty's IBAN when the statement has one (German Girokonto exports
-    do), so different spellings of one counterparty are one payee; `names`
-    lists how it was spelled. Without an IBAN, a payee is its normalised name.
+    counterparty's IBAN when the statement has one (common in IBAN countries,
+    e.g. a German Girokonto export), so different spellings of one
+    counterparty are one payee; `names` lists how it was spelled. Without an IBAN, a payee is its normalised name.
 
     WHAT TO DO NEXT
     - Tell the user the counts, the date range and anything flagged.

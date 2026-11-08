@@ -47,7 +47,9 @@ whether each line is a debit or credit).
    the file itself could not settle; say so rather than guessing.
 
    **A payee is identified by the counterparty's IBAN, not by its name,** whenever the statement
-   has an IBAN column (German Girokonto exports do: "IBAN", "Kontonummer/IBAN"). Names change from
+   has an IBAN column. This is common in countries that use IBANs, for example a German Girokonto
+   export ("IBAN", "Kontonummer/IBAN"). The column is found by its content, so the header language
+   does not matter. Names change from
    one booking to the next ("REWE Markt GmbH", "REWE SAGT DANKE 4711"); the IBAN does not. Use the
    `payee` value exactly as listed — the IBAN — as the key in `overrides.payees`. Show the user the
    `names` beside each IBAN so they recognise it. If one IBAN carries several unrelated `names`, it
