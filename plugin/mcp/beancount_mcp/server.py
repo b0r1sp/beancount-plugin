@@ -389,7 +389,10 @@ def propose_transactions(
     `totals`, the column `mapping` (read it — it says what was assumed and on
     what evidence, including whether the running balance confirmed the sign),
     what was `flagged` and why, and `payees` — each distinct payee once, with
-    how many rows and the net amount.
+    how many rows and the net amount. A payee is identified by the
+    counterparty's IBAN when the statement has one (German Girokonto exports
+    do), so different spellings of one counterparty are one payee; `names`
+    lists how it was spelled. Without an IBAN, a payee is its normalised name.
 
     WHAT TO DO NEXT
     - Tell the user the counts, the date range and anything flagged.
@@ -424,10 +427,12 @@ def commit_proposal(proposal_id: str, overrides: str = "", open_new_accounts: bo
     """Write a proposal from `propose_transactions` into the book, as ONE commit.
 
     `overrides` is a JSON object with the accounts you chose:
-      {"payees": {"REWE MARKT GMBH": "Expenses:Groceries",
+      {"payees": {"DE89370400440532013000": "Expenses:Groceries",
                   "SALARY ACME LTD": "Income:Salary"},
        "rows":   {"cb1:0123abcd4567ef89": "Expenses:Travel"}}
-    Payee keys are the `payee` values the proposal listed. `rows` overrides a
+    Payee keys are the `payee` values the proposal listed: an IBAN when the
+    statement has one, otherwise a name. One IBAN with several `names` (a
+    payment provider such as PayPal) usually needs per-row accounts. `rows` overrides a
     single row by its import_id, and "skip" leaves that row (or that payee) out.
     Anything you do not name stays on Expenses:Unclassified /
     Income:Unclassified — say so to the user rather than guessing.

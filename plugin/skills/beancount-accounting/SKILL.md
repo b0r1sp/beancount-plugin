@@ -83,6 +83,9 @@ mapping it detected — which column was the amount, which date format, and whic
 number points, checked against the running balance when there is one — plus counts, what it
 flagged, and each distinct payee once, under a `proposal_id`. It never writes. Choose an account
 per payee and write it with `commit_proposal`; never re-type the rows into `add_transactions`.
+A payee is identified by the counterparty's IBAN when the statement has one, not by its name:
+key `overrides.payees` by that IBAN. The written entry carries the name as payee and the IBAN as
+`counterparty-iban:` metadata, so `run_query` can select everything paid to one IBAN.
 Reading the file yourself gets a different answer on a different day; the tool does not. Only a
 PDF, a QIF, a receipt photo or a spoken description needs you to extract the rows by hand.
 

@@ -289,6 +289,27 @@ def payee_key(narration: str) -> str:
     return key or " ".join((narration or "").upper().split())[:60] or "(NO DESCRIPTION)"
 
 
+def group_key(row: dict) -> str:
+    """Which payee group a proposed row belongs to.
+
+    The counterparty's IBAN when the statement has one: a name is spelled
+    differently from one booking to the next ("REWE Markt GmbH", "REWE SAGT
+    DANKE 4711"), an IBAN is not. Without an IBAN, the counterparty's name;
+    without that, the narration — both through ``payee_key``.
+    """
+    iban = row.get("counterparty_iban") or ""
+    if iban:
+        return iban
+    return payee_key(row.get("payee") or row["narration"])
+
+
+def override_key(key: str) -> str:
+    """Normalise a key the model sent in overrides.payees the same way
+    ``group_key`` built it: an IBAN loses its spaces, a name goes through
+    ``payee_key``."""
+    return importing.normalise_iban(key) or payee_key(key)
+
+
 # ------------------------------------------------------------------- propose --
 def propose(book_root, book_text: str, statement_id: str, account: str, **options) -> dict:
     """Run the importer over a STAGED statement, store the result, summarise it.
@@ -336,13 +357,16 @@ def summarise(record: dict) -> dict:
     for row in rows:
         amount = Decimal(row["amount"])
         (totals_in if amount > 0 else totals_out)[row["currency"]] += amount
-        key = payee_key(row["narration"])
+        key = group_key(row)
         entry = payees.setdefault(key, {
             "payee": key, "rows": 0, "net": defaultdict(Decimal),
-            "example": row["narration"][:80],
+            "example": row["narration"][:80], "names": Counter(),
+            "iban": row.get("counterparty_iban") or "",
         })
         entry["rows"] += 1
         entry["net"][row["currency"]] += amount
+        if row.get("payee"):
+            entry["names"][row["payee"][:60]] += 1
         if row["flag"] == "!":
             for reason in row["ambiguities"]:
                 reasons[reason[:240]] += 1
@@ -361,6 +385,14 @@ def summarise(record: dict) -> dict:
     listed = []
     for p in ranked[:PAYEE_LIMIT]:
         item = {"payee": p["payee"], "rows": p["rows"], "net": _money(p["net"])}
+        if p["iban"]:
+            item["iban"] = p["iban"]
+        if p["names"]:
+            # Several names on one IBAN is normal for a payment provider
+            # (PayPal, Klarna): say so, so those rows can be split by row.
+            item["names"] = [n for n, _ in p["names"].most_common(3)]
+            if len(p["names"]) > 3:
+                item["names_not_listed"] = len(p["names"]) - 3
         if p["example"].upper() != p["payee"]:
             item["example"] = p["example"]
         listed.append(item)
@@ -400,7 +432,11 @@ def summarise(record: dict) -> dict:
             "Nothing is written yet. Tell the user the counts, the date range "
             "and anything flagged. Then choose an account for each payee and call "
             "commit_proposal with this proposal_id and overrides like "
-            '{"payees": {"<payee>": "Expenses:Groceries"}}. Payees you leave out '
+            '{"payees": {"<payee>": "Expenses:Groceries"}}, using each payee '
+            "value exactly as listed — an IBAN when the statement has one, so "
+            "a counterparty is recognised however its name is spelled. An IBAN "
+            "with several names (a payment provider such as PayPal) may need "
+            "per-row accounts. Payees you leave out "
             "stay on Expenses:Unclassified / Income:Unclassified. To change or "
             'drop one row, use {"rows": {"<import_id>": "<account>" or "skip"}}. '
             "Do NOT re-type the transactions into add_transactions — the commit "
@@ -446,7 +482,7 @@ def parse_overrides(overrides) -> tuple[dict, dict]:
             f"Liabilities:, Equity:, Income: or Expenses:, and each part starts "
             f"with a capital letter or a digit. Nothing was written."
         )
-    return {payee_key(k): v for k, v in payees.items()}, dict(rows)
+    return {override_key(k): v for k, v in payees.items()}, dict(rows)
 
 
 def commit(ledger, proposal_id: str, overrides=None, open_new_accounts: bool = False) -> dict:
@@ -488,7 +524,12 @@ def commit(ledger, proposal_id: str, overrides=None, open_new_accounts: bool = F
         if row["import_id"] in in_book:
             skipped_in_book += 1
             continue
-        target = row_overrides.get(row["import_id"]) or payees.get(payee_key(row["narration"]))
+        target = (
+            row_overrides.get(row["import_id"])
+            or payees.get(group_key(row))
+            # A row grouped by IBAN can still be named by its counterparty.
+            or (payees.get(payee_key(row["payee"])) if row.get("payee") else None)
+        )
         if target == SKIP:
             skipped_by_you += 1
             continue
@@ -500,6 +541,7 @@ def commit(ledger, proposal_id: str, overrides=None, open_new_accounts: bool = F
             amount=row["amount"], currency=row["currency"], account=row["account"],
             counter_account=counter, import_id=row["import_id"],
             source_row=row["source_row"], ambiguities=list(row["ambiguities"]),
+            payee=row.get("payee", ""), counterparty_iban=row.get("counterparty_iban", ""),
         ))
     if not chosen:
         raise ProposalError(

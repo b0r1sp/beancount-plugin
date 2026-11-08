@@ -56,6 +56,7 @@ import hashlib
 import io
 import json
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -94,6 +95,8 @@ class ImporterError(LedgerError):
 # with whatever else a user or another tool writes, and a generic key is one
 # collision away from a statement silently refusing to import.
 IMPORT_ID_KEY = "import-id"
+# Metadata key for the counterparty's IBAN on an imported transaction.
+COUNTERPARTY_IBAN_KEY = "counterparty-iban"
 
 # Versioned so a future change to how the key is derived cannot silently make
 # every previously-imported row look new. A `cb2:` prefix would simply not match
@@ -142,6 +145,7 @@ _DATE_WORDS = ("date", "posted", "posting", "dato", "datum", "fecha", "buchung")
 _DESC_WORDS = (
     "description", "desc", "payee", "merchant", "name", "memo", "details",
     "detail", "narrative", "particulars", "reference", "reason", "text",
+    "verwendungszweck",
 )
 _DEBIT_WORDS = (
     "debit", "withdrawal", "withdrawn", "money out", "paid out", "outflow",
@@ -154,6 +158,19 @@ _CREDIT_WORDS = (
 _AMOUNT_WORDS = ("amount", "value", "montant", "betrag", "importe", "sum")
 _BALANCE_WORDS = ("balance", "saldo", "solde", "running")
 _CURRENCY_WORDS = ("currency", "ccy", "curr", "waehrung", "devise")
+# Who the money went to or came from. German Girokonto exports name this column
+# "Beguenstigter/Zahlungspflichtiger" (Sparkasse), "Auftraggeber/Empfaenger"
+# (ING), or split it in two (DKB: "Zahlungspflichtige*r", "Zahlungsempfaenger*in").
+_PAYER_WORDS = ("zahlungspflicht", "auftraggeber", "payer", "remitter", "sender")
+_PAYEE_WORDS = (
+    "empfaenger", "zahlungsempf", "beguenstigt", "payee", "beneficiary",
+    "recipient",
+)
+_COUNTERPARTY_WORDS = ("counterparty", "gegenpartei", "partner", "name")
+# A column of IBANs that is the statement's OWN account, not the counterparty.
+_OWN_ACCOUNT_WORDS = ("auftragskonto", "own account", "eigenes konto", "account iban")
+_IBAN_WORDS = ("iban", "kontonummer", "gegenkonto", "account number")
+_IBAN_RE = re.compile(r"^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$")
 
 _CURRENCY_CODE_RE = re.compile(r"^[A-Z][A-Z0-9._'-]{1,22}$")
 _AMOUNT_STRIP_RE = re.compile(r"[^\d,.\-+()]")
@@ -194,10 +211,18 @@ class Proposal:
     source_row: int
     ambiguities: list[str] = field(default_factory=list)
     duplicate_of_existing: bool = False
+    payee: str = ""
+    counterparty_iban: str = ""
 
     def to_beancount(self) -> str:
-        lines = [f'{self.date} {self.flag} "{_quote(self.narration)}"']
+        if self.payee:
+            head = f'{self.date} {self.flag} "{_quote(self.payee)}" "{_quote(self.narration)}"'
+        else:
+            head = f'{self.date} {self.flag} "{_quote(self.narration)}"'
+        lines = [head]
         lines.append(f'  {IMPORT_ID_KEY}: "{self.import_id}"')
+        if self.counterparty_iban:
+            lines.append(f'  {COUNTERPARTY_IBAN_KEY}: "{self.counterparty_iban}"')
         lines.append(f"  {self.account}  {self.amount} {self.currency}")
         lines.append(f"  {self.counter_account}")
         return "\n".join(lines)
@@ -214,6 +239,8 @@ class Proposal:
             "import_id": self.import_id,
             "source_row": self.source_row,
             "ambiguities": list(self.ambiguities),
+            "payee": self.payee,
+            "counterparty_iban": self.counterparty_iban,
             "beancount": self.to_beancount(),
         }
 
@@ -228,6 +255,10 @@ class _Row:
     amount: Decimal
     currency: str
     external_id: str = ""
+    # The other side of the payment, when the file says: its IBAN (validated,
+    # without spaces) and its name. The IBAN is what payees are grouped by.
+    counterparty_iban: str = ""
+    counterparty: str = ""
     ambiguities: list[str] = field(default_factory=list)
     # Which repeat of an identical (date, amount, description) triple this row
     # is. Part of the duplicate key; see `import_key`.
@@ -469,8 +500,33 @@ def _header_match(header: str, words: tuple[str, ...]) -> bool:
     return False
 
 
+_TRANSLIT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
 def _norm(text: str) -> str:
-    return re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()).strip()
+    """Lowercase ASCII words. German umlauts become ae/oe/ue/ss first, so
+    "Währung" matches "waehrung" and "Empfänger" matches "empfaenger"."""
+    low = (text or "").lower().translate(_TRANSLIT)
+    low = unicodedata.normalize("NFKD", low).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9 ]+", " ", low).strip()
+
+
+def normalise_iban(text: str) -> str:
+    """The IBAN in ``text`` without spaces, uppercased — or "" if it is not a
+    valid IBAN (format and ISO 13616 mod-97 checksum both checked)."""
+    candidate = re.sub(r"[\s-]+", "", (text or "")).upper()
+    if not _IBAN_RE.match(candidate):
+        return ""
+    rearranged = candidate[4:] + candidate[:4]
+    digits = "".join(str(int(ch, 36)) for ch in rearranged)
+    return candidate if int(digits) % 97 == 1 else ""
+
+
+def _iban_fraction(values: list[str]) -> float:
+    present = [v for v in values if (v or "").strip()]
+    if not present:
+        return 0.0
+    return sum(1 for v in present if normalise_iban(v)) / len(present)
 
 
 def _detect_delimiter(text: str, override: str = "") -> tuple[str, str]:
@@ -786,6 +842,40 @@ def _parse_csv(text: str, account: str, options: dict) -> tuple[list[_Row], dict
             None,
         )
 
+    # ---- counterparty: IBAN and name
+    used = {date_col, amount_col, debit_col, credit_col, balance_col, currency_col}
+    iban_col = _resolve_column(columns.get("counterparty_iban"), table)
+    if iban_col is not None:
+        overrides.append("counterparty_iban")
+    else:
+        iban_col = _detect_iban_column(table, used)
+    payer_col = payee_col = name_col = None
+    if columns.get("counterparty") not in (None, ""):
+        name_col = _resolve_column(columns.get("counterparty"), table)
+        overrides.append("counterparty")
+    else:
+        text_cols = [i for i in range(table.width) if i not in used and i != iban_col]
+        payer = [i for i in text_cols if _header_match(table.label(i), _PAYER_WORDS)]
+        payee = [i for i in text_cols if _header_match(table.label(i), _PAYEE_WORDS)]
+        both = [i for i in payer if i in payee]
+        if both:
+            name_col = both[0]
+        elif payer and payee:
+            payer_col, payee_col = payer[0], payee[0]
+        elif payer or payee:
+            name_col = (payer or payee)[0]
+        else:
+            generic = [i for i in text_cols
+                       if _header_match(table.label(i), _COUNTERPARTY_WORDS)
+                       and not _header_match(table.label(i), _OWN_ACCOUNT_WORDS)]
+            name_col = generic[0] if generic else None
+    if iban_col is not None:
+        notes.append(
+            f"Payees are grouped by the counterparty IBAN in "
+            f"{table.label(iban_col)!r}. Rows without a valid IBAN there are "
+            f"grouped by name."
+        )
+
     # ---- decimal separator, from every money-shaped column at once
     money_cols = [c for c in (amount_col, debit_col, credit_col, balance_col) if c is not None]
     money_values = [v for c in money_cols for v in table.column(c)]
@@ -817,6 +907,10 @@ def _parse_csv(text: str, account: str, options: dict) -> tuple[list[_Row], dict
             "amount": _parse_number(row[amount_col], decimal_sep) if amount_col is not None else None,
             "balance": _parse_number(row[balance_col], decimal_sep) if balance_col is not None else None,
             "currency": (row[currency_col].strip().upper() if currency_col is not None else ""),
+            "counterparty_iban": normalise_iban(row[iban_col]) if iban_col is not None else "",
+            "counterparty": (row[name_col].strip() if name_col is not None else ""),
+            "payer": (row[payer_col].strip() if payer_col is not None else ""),
+            "payee": (row[payee_col].strip() if payee_col is not None else ""),
         }
         parsed.append(entry)
 
@@ -870,6 +964,11 @@ def _parse_csv(text: str, account: str, options: dict) -> tuple[list[_Row], dict
             "credit": _label_or_none(table, credit_col),
             "balance": _label_or_none(table, balance_col),
             "currency": _label_or_none(table, currency_col),
+            "counterparty_iban": _label_or_none(table, iban_col),
+            "counterparty": (
+                _label_or_none(table, name_col) if payer_col is None
+                else f"{table.label(payer_col)} (money in) / {table.label(payee_col)} (money out)"
+            ),
         },
         "amount_shape": shape,
         "date_format": date_format,
@@ -887,6 +986,31 @@ def _parse_csv(text: str, account: str, options: dict) -> tuple[list[_Row], dict
         "balance_check": balance_check,
     }
     return rows, mapping, notes, skipped
+
+
+def _detect_iban_column(table: _CsvTable, used: set) -> int | None:
+    """The column holding the COUNTERPARTY's IBAN, or None.
+
+    Found by content: at least 80% of its filled cells must be valid IBANs.
+    A column of IBANs that is the statement's own account is skipped: its
+    header says so ("Auftragskonto"), or it holds one IBAN on every row.
+    """
+    candidates = []
+    for i in range(table.width):
+        if i in used:
+            continue
+        values = table.column(i)
+        if _iban_fraction(values) < 0.8:
+            continue
+        label = table.label(i)
+        if _header_match(label, _OWN_ACCOUNT_WORDS):
+            continue
+        distinct = {normalise_iban(v) for v in values if normalise_iban(v)}
+        if len(distinct) == 1 and len(table.rows) >= 3:
+            continue
+        named = _header_match(label, _IBAN_WORDS)
+        candidates.append((not named, i))
+    return min(candidates)[1] if candidates else None
 
 
 def _label_or_none(table: _CsvTable, index):
@@ -1345,8 +1469,25 @@ def _make_row(entry: dict, amount: Decimal, ambiguities: list[str]) -> _Row:
         description=entry["description"],
         amount=amount,
         currency=entry.get("currency", ""),
+        counterparty_iban=entry.get("counterparty_iban", ""),
+        counterparty=_pick_counterparty(entry, amount),
         ambiguities=list(ambiguities),
     )
+
+
+def _pick_counterparty(entry: dict, amount: Decimal) -> str:
+    """The counterparty's name for this row.
+
+    With one name column, that column. With separate payer and payee columns
+    (DKB), one of them is the account holder: money out went TO the payee,
+    money in came FROM the payer.
+    """
+    if entry.get("counterparty"):
+        return entry["counterparty"]
+    payer, payee = entry.get("payer", ""), entry.get("payee", "")
+    if amount < 0:
+        return payee or payer
+    return payer or payee
 
 
 # ------------------------------------------------------------------ OFX parse --
@@ -1734,6 +1875,8 @@ def propose(
             import_id=key,
             source_row=row.source_row,
             ambiguities=ambiguities,
+            payee=_quote(row.counterparty),
+            counterparty_iban=row.counterparty_iban,
         ))
 
     block = "\n\n".join(p.to_beancount() for p in proposals)

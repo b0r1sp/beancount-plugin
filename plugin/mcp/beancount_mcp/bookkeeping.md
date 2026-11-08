@@ -54,7 +54,8 @@ these are the rules.
 A CSV, OFX or QFX statement goes through `propose_transactions`, never
 through you retyping rows. It returns a summary with a `proposal_id`: the
 column mapping it assumed, counts, the date range, what it flagged, and each
-payee once. Tell the person the counts, the dates and anything flagged.
+payee once — by the counterparty's IBAN when the statement has one, with the
+names it appeared under. Tell the person the counts, the dates and anything flagged.
 Choose an account per payee, show the choice, and after they agree call
 `commit_proposal` with those choices. Anything you do not name stays as
 `Unclassified`; say so rather than guessing. Calling `commit_proposal` twice

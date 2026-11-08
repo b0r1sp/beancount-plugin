@@ -46,6 +46,17 @@ whether each line is a debit or credit).
    leave out stay on `Expenses:Unclassified` / `Income:Unclassified`. Flagged rows (`!`) are rows
    the file itself could not settle; say so rather than guessing.
 
+   **A payee is identified by the counterparty's IBAN, not by its name,** whenever the statement
+   has an IBAN column (German Girokonto exports do: "IBAN", "Kontonummer/IBAN"). Names change from
+   one booking to the next ("REWE Markt GmbH", "REWE SAGT DANKE 4711"); the IBAN does not. Use the
+   `payee` value exactly as listed — the IBAN — as the key in `overrides.payees`. Show the user the
+   `names` beside each IBAN so they recognise it. If one IBAN carries several unrelated `names`, it
+   is a payment provider (PayPal, Klarna, Amazon Payments): do not put them all on one account —
+   ask, and use `overrides.rows` per row instead. `mapping.columns.counterparty_iban` says which
+   column was read; if it is wrong or missing, call again with
+   `columns='{"counterparty_iban": "<header>", "counterparty": "<header>"}'`. Only rows without an
+   IBAN (card payments, cash) are grouped by name.
+
 4. **Preview, then commit.** Show the user `counts`, the date range and anything flagged. Once
    they agree, call `commit_proposal(proposal_id, overrides='{"payees": {"<payee>":
    "<account>"}}')`. It writes the parsed rows itself — do **not** re-type them into
