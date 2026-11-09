@@ -178,6 +178,24 @@ def _own_iban(raw_rows, given: str, filename: str = "") -> tuple[str, str]:
     for candidate in _IBAN_IN_NAME.findall(account_key(filename)):
         if normalise_iban(candidate):
             return candidate, "the IBAN in the file name"
+    # The own account is one side of every booking. Where BOTH account columns
+    # are filled, it is therefore in (nearly) every row, whatever the
+    # direction — a direct debit puts the own IBAN in the payee column although
+    # the money goes out, so "payer of money out" is not reliable.
+    both: Counter = Counter()
+    rows_with_both = 0
+    for values in raw_rows:
+        keys = [account_key(values.get(k)) for k in ("payer_account", "payee_account")]
+        if all(keys):
+            rows_with_both += 1
+            both.update(set(keys))
+    if rows_with_both:
+        ranked = both.most_common(2)
+        own, seen = ranked[0]
+        runner_up = ranked[1][1] if len(ranked) > 1 else 0
+        # Clearly ahead: in one row with both columns, both IBANs tie.
+        if seen >= rows_with_both * _OWN_IBAN_QUORUM and seen > runner_up:
+            return own, f"the IBAN in the rows with both account columns ({seen} of {rows_with_both})"
     counts: Counter = Counter()
     for values in raw_rows:
         amount = _amount(values.get("amount"))
@@ -202,17 +220,29 @@ def _own_iban(raw_rows, given: str, filename: str = "") -> tuple[str, str]:
 
 
 def _counterparty(values: dict, amount: Decimal, own: str) -> tuple[str, str]:
-    """(name, IBAN) of the other side of the payment."""
+    """(name, IBAN) of the other side of the payment.
+
+    The other side is the one that is NOT the own account. If only one account
+    column is filled and it is not the own one, that side is the counterparty,
+    whatever the direction: a SEPA direct debit carries the creditor as the
+    payer although the money goes out. Only when the accounts do not decide it
+    does the direction: the payee of money out, the payer of money in. A name
+    from the other side is then used only if it has an account, so the
+    account holder's own name never becomes the payee.
+    """
     payee = (values.get("payee_name"), values.get("payee_account"))
     payer = (values.get("payer_name"), values.get("payer_account"))
-    primary, secondary = (payee, payer) if amount < 0 else (payer, payee)
-    side = primary
-    if own and account_key(primary[1]) == own:
-        other = account_key(secondary[1])
-        if other and other != own:
-            side = secondary
-    name, account = side
-    if own and account_key(account) == own:
+    preferred, other = (payee, payer) if amount < 0 else (payer, payee)
+
+    def is_own(side) -> bool:
+        return bool(own) and account_key(side[1]) == own
+
+    with_account = [s for s in (preferred, other) if account_key(s[1]) and not is_own(s)]
+    if with_account:
+        name, account = with_account[0]
+    elif not is_own(preferred):
+        name, account = preferred
+    else:
         name, account = "", ""
     cleaned = clean_payee(name) if collapse(name) else ""
     return cleaned or clean_payee(values.get("text") or values.get("purpose")), normalise_iban(account)

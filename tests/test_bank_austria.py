@@ -147,10 +147,56 @@ def test_own_iban_is_never_the_counterparty(xls):
     assert all(r.counterparty_iban != OWN for r in rows.values())
 
 
-def test_own_iban_is_detected_on_the_own_side(xls):
+def test_own_iban_is_detected_from_rows_with_both_accounts(xls):
     result = ba.read_rows(xls.read_bytes())
     assert result.own_iban == OWN
-    assert "own side" in result.own_iban_source
+    assert "both account columns" in result.own_iban_source
+
+
+# As Bank Austria delivers a SEPA direct debit: the money goes OUT, but the
+# collecting company is the payer (Auftraggeber) and the account holder is
+# the payee (Empfänger), because the creditor starts the payment.
+DIRECT_DEBIT = row("2026-03-20", "SEPA Lastschrift", -63.5, payer="Wien Energie GmbH",
+                   payer_acct=ENERGY, payee="Max Muster", payee_acct=OWN, purpose="Strom")
+DIRECT_DEBIT_CREDITOR_ONLY = row("2026-03-21", "SEPA Lastschrift", -41.0,
+                                 payer="Wien Energie GmbH", payer_acct=ENERGY, purpose="Gas")
+
+
+@pytest.mark.parametrize("own_iban", [OWN, ""])
+def test_direct_debit_counterparty_is_the_creditor(tmp_path, own_iban):
+    rows = [DIRECT_DEBIT, DIRECT_DEBIT, row("2026-03-22", "Gutschrift", 10.0, payer="Employer GmbH",
+                                            payer_acct=EMPLOYER, payee="Max Muster", payee_acct=OWN)]
+    path = write_xls(tmp_path / "x.xls", rows=rows)
+    result = ba.read_rows(path.read_bytes(), own_iban=own_iban)
+    debit = result.rows[0]
+    assert debit.counterparty_iban == ENERGY
+    assert debit.counterparty == "Wien Energie GmbH"
+
+
+def test_direct_debit_with_only_the_creditor_account(tmp_path):
+    path = write_xls(tmp_path / "x.xls", rows=[DIRECT_DEBIT_CREDITOR_ONLY])
+    debit = ba.read_rows(path.read_bytes(), own_iban=OWN).rows[0]
+    assert debit.counterparty_iban == ENERGY
+    assert debit.counterparty == "Wien Energie GmbH"
+
+
+def test_own_iban_is_detected_when_direct_debits_dominate(tmp_path):
+    # On the "own side" (payer of money out) the creditor would win 3 to 1;
+    # in the rows with both accounts, the own IBAN is in every one.
+    rows = [DIRECT_DEBIT] * 3 + [
+        row("2026-03-22", "Gutschrift", 10.0, payer="Employer GmbH", payer_acct=EMPLOYER,
+            payee="Max Muster", payee_acct=OWN),
+        row("2026-03-23", "Online Überweisung", -5.0, payer="Max Muster", payer_acct=OWN,
+            payee="BILLA AG", payee_acct=SHOP),
+    ]
+    path = write_xls(tmp_path / "x.xls", rows=rows)
+    assert ba.read_rows(path.read_bytes()).own_iban == OWN
+
+
+def test_own_name_without_account_is_never_the_payee(tmp_path):
+    rows = [row("2026-03-24", "HOFER DANKT 2371 WIEN", -23.4, payer="Max Muster")]
+    path = write_xls(tmp_path / "x.xls", rows=rows)
+    assert ba.read_rows(path.read_bytes(), own_iban=OWN).rows[0].counterparty == "HOFER DANKT"
 
 
 def test_a_frequent_counterparty_is_not_taken_as_own_iban(tmp_path):
