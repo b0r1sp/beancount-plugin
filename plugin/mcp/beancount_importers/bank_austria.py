@@ -11,15 +11,20 @@ There is no column for the counterparty: the payer (Auftraggeber) and the
 payee (Empfänger) are both given, and one of them is the account holder. So:
 
 * money OUT went to the payee, money IN came from the payer;
-* the account holder's own IBAN is never the counterparty. It is taken from
-  the caller (the ``iban:`` metadata of the book account), else it is the IBAN
-  that appears most often in the file — the own account is on every row;
+* the account holder's own IBAN is never the counterparty. It is taken, in
+  this order, from the caller (the ``iban:`` metadata of the book account),
+  from the file name (the export is named ``…-Umsatzliste-…-AT….xls``), or
+  from the "own side" of the rows: the payer of money out, the payee of money
+  in. It is NOT the most frequent IBAN overall: the real export leaves the
+  own account empty on most rows (card payments, real-time transfers), so a
+  frequent supplier would win;
 * a card payment has no counterparty columns: the merchant is cleaned out of
   the booking text (``POS 54,20 AUT K01 … O BILLA DANKT 4711 WIEN 1100``).
 """
 from __future__ import annotations
 
 import datetime
+import os
 import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation
@@ -54,8 +59,9 @@ COLUMNS = {
 _REQUIRED = ("date", "amount")
 _IDENTIFYING = ("payer_name", "payee_name", "payer_account", "payee_account")
 _HEADER_SEARCH_ROWS = 10
-# The own IBAN must be on at least this share of the rows that carry an IBAN.
-_OWN_IBAN_QUORUM = 0.5
+# On the own side, the own IBAN must hold at least this share of the values.
+_OWN_IBAN_QUORUM = 0.8
+_IBAN_IN_NAME = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 
 
 class BankAustriaError(ImporterError):
@@ -157,28 +163,34 @@ def clean_payee(text) -> str:
 
 
 # ---------------------------------------------------------------- the rows --
-def _own_iban(raw_rows, given: str) -> tuple[str, str]:
+def _own_iban(raw_rows, given: str, filename: str = "") -> tuple[str, str]:
     if given:
         own = normalise_iban(given) or account_key(given)
         return own, "the account's iban metadata"
+    for candidate in _IBAN_IN_NAME.findall(account_key(filename)):
+        if normalise_iban(candidate):
+            return candidate, "the IBAN in the file name"
     counts: Counter = Counter()
-    with_account = 0
     for values in raw_rows:
-        keys = {account_key(values.get(k)) for k in ("payer_account", "payee_account")} - {""}
-        if keys:
-            with_account += 1
-            counts.update(keys)
+        amount = _amount(values.get("amount"))
+        if amount is None:
+            continue
+        own_side = values.get("payer_account") if amount < 0 else values.get("payee_account")
+        if account_key(own_side):
+            counts[account_key(own_side)] += 1
     if not counts:
-        return "", "no account numbers in the file"
+        return "", "no account numbers on the own side of any row"
     own, seen = counts.most_common(1)[0]
-    if seen < with_account * _OWN_IBAN_QUORUM:
+    total = sum(counts.values())
+    if seen < total * _OWN_IBAN_QUORUM:
         raise BankAustriaError(
             "Cannot tell which account in this file is your own IBAN: no account "
-            "number appears on most rows. Add your IBAN to the account in the "
-            'book, for example `iban: "AT12 3456 …"` under its `open` entry, '
-            "and import again. Nothing was imported."
+            "number clearly dominates the own side (the payer of money out, the "
+            "payee of money in). Add your IBAN to the account in the book, for "
+            'example `iban: "AT12 3456 …"` under its `open` entry, and import '
+            "again. Nothing was imported."
         )
-    return own, f"the most frequent IBAN in the file ({seen} of {with_account} rows)"
+    return own, f"the most frequent IBAN on the own side of the rows ({seen} of {total})"
 
 
 def _counterparty(values: dict, amount: Decimal, own: str) -> tuple[str, str]:
@@ -198,11 +210,11 @@ def _counterparty(values: dict, amount: Decimal, own: str) -> tuple[str, str]:
     return cleaned or clean_payee(values.get("text") or values.get("purpose")), normalise_iban(account)
 
 
-def read_rows(data: bytes, own_iban: str = "") -> Result:
+def read_rows(data: bytes, own_iban: str = "", filename: str = "") -> Result:
     """Every booking in a Bank Austria .xls export, in the common row shape.
 
-    ``own_iban`` is the account holder's IBAN, from the book. Without it, the
-    most frequent IBAN in the file is taken.
+    ``own_iban`` is the account holder's IBAN, from the book. ``filename`` is
+    the export's file name, which normally contains the IBAN.
     """
     book = _open(data)
     found = _find_header(book.sheet_by_index(0)) if book and book.nsheets else None
@@ -220,7 +232,7 @@ def read_rows(data: bytes, own_iban: str = "") -> Result:
         values["_line"] = r + 1
         raw_rows.append(values)
 
-    own, own_source = _own_iban(raw_rows, own_iban)
+    own, own_source = _own_iban(raw_rows, own_iban, filename)
     rows = []
     for values in raw_rows:
         line = values["_line"]
@@ -286,7 +298,7 @@ class BankAustriaImporter(beangulp.Importer):
 
     def extract(self, filepath: str, existing: bc_data.Entries) -> bc_data.Entries:
         with open(filepath, "rb") as handle:
-            result = read_rows(handle.read(), self._own_iban)
+            result = read_rows(handle.read(), self._own_iban, os.path.basename(filepath))
         entries = []
         for row in result.rows:
             meta = bc_data.new_metadata(filepath, row.source_row)

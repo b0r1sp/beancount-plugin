@@ -14,7 +14,7 @@ repository without changes.
 from . import bank_austria
 
 #: Every bank importer, in the order they are tried. Each module has
-#: ``NAME``, ``matches(data) -> bool`` and ``read_rows(data, own_iban) -> Result``.
+#: ``NAME``, ``matches(data) -> bool`` and ``read_rows(data, own_iban, filename) -> Result``.
 BANKS = (bank_austria,)
 
 

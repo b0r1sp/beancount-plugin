@@ -27,11 +27,14 @@ EMPLOYER = _iban("AT", "1200000000000002")
 ENERGY = _iban("AT", "1200000000000003")
 LANDLORD = _iban("AT", "1200000000000004")
 
+# The real column layout of the Bank Austria export (17 columns).
 HEADER = [
-    "Buchungsdatum", "Valutadatum", "Buchungstext", "Auftraggebername",
-    "Auftraggeberkonto", "Empfängername", "Empfängerkonto", "Verwendungszweck",
-    "Währung", "Betrag",
+    "EZ", "Buchungsdatum", "Valutadatum", "Buchungstext", "Interne Notiz", "Währung",
+    "Betrag", "Belegdaten", "Belegnummer", "Auftraggebername", "Auftraggeberkonto",
+    "Auftraggeber BIC", "Empfängername", "Empfängerkonto", "Empfänger BIC",
+    "Verwendungszweck", "Referenz",
 ]
+COL = {name: i for i, name in enumerate(HEADER)}
 
 
 def _serial(iso: str) -> float:
@@ -39,13 +42,21 @@ def _serial(iso: str) -> float:
 
 
 def row(date, text, amount, payer="", payer_acct="", payee="", payee_acct="", purpose="", ccy="EUR"):
-    return [_serial(date), _serial(date), text, payer, payer_acct, payee, payee_acct, purpose, ccy, amount]
+    values = {
+        "Buchungsdatum": _serial(date), "Valutadatum": _serial(date), "Buchungstext": text,
+        "Währung": ccy, "Betrag": amount, "Auftraggebername": payer,
+        "Auftraggeberkonto": payer_acct, "Empfängername": payee, "Empfängerkonto": payee_acct,
+        "Verwendungszweck": purpose,
+    }
+    return [values.get(name, "") for name in HEADER]
 
 
+# As in the real export, the own account is only filled in on transfers and
+# direct debits — card payments, real-time transfers and most credits leave
+# both account columns empty.
 ROWS = [
-    # Card payment: the merchant is only in the booking text.
-    row("2026-03-01", "POS 54,20 AUT K01 01.03.2026 12:34 O BILLA DANKT 4711 WIEN 1100",
-        -54.2, payer="Max Muster", payer_acct=OWN),
+    # Card payment, older format: the merchant follows "POS … O".
+    row("2026-03-01", "POS 54,20 AUT K01 01.03.2026 12:34 O BILLA DANKT 4711 WIEN 1100", -54.2),
     # Direct debit to a company, money out: the counterparty is the payee.
     row("2026-03-02", "SEPA Lastschrift", -63.5, payer="Max Muster", payer_acct=OWN,
         payee="Wien Energie GmbH", payee_acct=ENERGY, purpose="Strom Teilbetrag 03/2026"),
@@ -57,16 +68,21 @@ ROWS = [
         payer_acct=OWN, payee_acct=LANDLORD, purpose="Miete 03/2026"),
     # Card payment in USD with an FX note at the end.
     row("2026-03-07", "E-COMM 9,99 USA K01 07.03.2026 10:00 O SPOTIFY 1234 STOCKHOLM "
-        "SPESEN: 0,15 KURS:1,0832 VOM:07.03.2026", -9.37, payer="Max Muster", payer_acct=OWN),
+        "SPESEN: 0,15 KURS:1,0832 VOM:07.03.2026", -9.37),
     # Cash withdrawal.
-    row("2026-03-08", "ATM 100,00 AUT K01 08.03.2026 09:00 O BANKOMAT ABC 1234 WIEN",
-        -100.0, payer="Max Muster", payer_acct=OWN),
+    row("2026-03-08", "ATM 100,00 AUT K01 08.03.2026 09:00 O BANKOMAT ABC 1234 WIEN", -100.0),
     # Second purchase at the same shop with another name, paid by transfer.
     row("2026-03-09", "Online Überweisung", -12.3, payer="Max Muster", payer_acct=OWN,
         payee="BILLA AG Filiale 12", payee_acct=SHOP, purpose="Rechnung 8812"),
     # Bank fee: both account columns hold the own IBAN.
     row("2026-03-10", "Kontoführung", -4.9, payer="Max Muster", payer_acct=OWN,
         payee="Max Muster", payee_acct=OWN, purpose="Entgelt 03/2026"),
+    # Card payment, newer format: the merchant is at the start of the text.
+    row("2026-03-11", "HOFER DANKT 2371 WIEN", -23.4),
+    row("2026-03-12", "MCDONALDS155 2360", -11.8),
+    # Real-time transfer and credit with only a name, no account columns.
+    row("2026-03-13", "Echtzeitüberweisung zG/ Anna Beispiel", -50.0),
+    row("2026-03-14", "Gutschrift a/Anna Beispiel", 20.0),
 ]
 
 
@@ -131,10 +147,41 @@ def test_own_iban_is_never_the_counterparty(xls):
     assert all(r.counterparty_iban != OWN for r in rows.values())
 
 
-def test_own_iban_is_detected_as_the_most_frequent(xls):
+def test_own_iban_is_detected_on_the_own_side(xls):
     result = ba.read_rows(xls.read_bytes())
     assert result.own_iban == OWN
-    assert "most frequent" in result.own_iban_source
+    assert "own side" in result.own_iban_source
+
+
+def test_a_frequent_counterparty_is_not_taken_as_own_iban(tmp_path):
+    # Like the real export: the own account is empty on most rows, so the
+    # supplier's IBAN is the most frequent one in the file. It is never on
+    # the own side (payer of money out), so it must not win.
+    rows = [row(f"2026-03-{d:02d}", "SEPA Lastschrift", -10.0, payee="Wien Energie GmbH",
+                payee_acct=ENERGY) for d in range(1, 6)]
+    rows.append(row("2026-03-06", "Online Überweisung", -5.0, payer_acct=OWN,
+                    payee="Employer GmbH", payee_acct=EMPLOYER))
+    path = write_xls(tmp_path / "x.xls", rows=rows)
+    result = ba.read_rows(path.read_bytes())
+    assert result.own_iban == OWN
+    assert {r.counterparty_iban for r in result.rows} == {ENERGY, EMPLOYER}
+
+
+def test_own_iban_from_the_file_name(tmp_path):
+    # The real export names the file after the account:
+    # 12345678-Umsatzliste-20260101-1700000000000-AT…xls
+    rows = [row("2026-03-01", "HOFER DANKT 2371 WIEN", -23.4)]
+    name = f"12345678-Umsatzliste-20260101-1700000000000-{OWN}.xls"
+    path = write_xls(tmp_path / name, rows=rows)
+    result = ba.read_rows(path.read_bytes(), filename=name)
+    assert result.own_iban == OWN
+    assert result.own_iban_source == "the IBAN in the file name"
+
+
+def test_metadata_wins_over_the_file_name(xls):
+    result = ba.read_rows(xls.read_bytes(), own_iban=OWN, filename=f"x-{SHOP}.xls")
+    assert result.own_iban == OWN
+    assert result.own_iban_source == "the account's iban metadata"
 
 
 def test_own_iban_given_by_the_caller_wins(xls):
@@ -145,9 +192,9 @@ def test_own_iban_given_by_the_caller_wins(xls):
 
 
 def test_unknown_own_iban_is_refused(tmp_path):
-    # Every row has a different account and none of them dominates.
-    rows = [row("2026-03-0%d" % i, "Gutschrift", 10.0, payer="P", payer_acct=_iban("AT", "120000000000001%d" % i))
-            for i in range(1, 5)]
+    # Every row has a different account on the own side; none dominates.
+    rows = [row("2026-03-0%d" % i, "Gutschrift", 10.0, payer="P",
+                payee_acct=_iban("AT", "120000000000001%d" % i)) for i in range(1, 5)]
     path = write_xls(tmp_path / "x.xls", rows=rows)
     with pytest.raises(ba.BankAustriaError, match="own IBAN"):
         ba.read_rows(path.read_bytes())
@@ -162,6 +209,11 @@ def test_unknown_own_iban_is_refused(tmp_path):
      "SPESEN: 0,15 KURS:1,0832 VOM:07.03.2026", "SPOTIFY"),
     ("SEPA Lastschrift a/Wien Energie GmbH", "Wien Energie GmbH"),
     ("Wien Energie GmbH", "Wien Energie GmbH"),
+    # Newer card format: the merchant is at the start of the text.
+    ("HOFER DANKT 2371 WIEN", "HOFER DANKT"),
+    ("MCDONALDS155 2360", "MCDONALDS"),
+    ("Echtzeitüberweisung zG/ Anna Beispiel", "Anna Beispiel"),
+    ("Gutschrift a/Anna Beispiel", "Anna Beispiel"),
 ])
 def test_clean_payee(text, expected):
     assert ba.clean_payee(text) == expected
@@ -193,6 +245,15 @@ def test_beangulp_extract(xls):
 
 
 # ------------------------------------------------- through the MCP server ---
+def test_own_iban_from_the_file_name_through_the_server(book, tmp_path):
+    name = f"12345678-Umsatzliste-20260101-1700000000000-{OWN}.xls"
+    path = write_xls(tmp_path / name)
+    book.add_directives("2026-01-01 open Assets:Giro EUR", "Open account")
+    summary = json.loads(book.propose_transactions(file_path=str(path), account="Assets:Giro"))
+    assert summary["mapping"]["own_iban"] == OWN
+    assert summary["mapping"]["own_iban_source"] == "the IBAN in the file name"
+
+
 def test_propose_and_commit_a_bank_austria_file(book, xls):
     spaced = " ".join(OWN[i:i + 4] for i in range(0, len(OWN), 4))
     book.add_directives(f'2026-01-01 open Assets:Giro EUR\n  iban: "{spaced}"', "Open account")

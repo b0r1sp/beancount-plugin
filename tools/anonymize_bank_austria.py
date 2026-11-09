@@ -15,7 +15,8 @@ What it does:
   names of private persons, and every number of 5+ digits (standing-order,
   contract and reference numbers) — consistently: the same real value always
   becomes the same fake value, so grouping by IBAN can still be tested;
-* keeps company and merchant names (GmbH, AG, BILLA, …) — the rules need them;
+* keeps company names (GmbH, AG, Bank, …) and the names in card texts
+  (BILLA DANKT …) — the rules need them; any other name is replaced;
 * multiplies all amounts by one random factor and shifts all dates by one
   random number of days;
 * picks a sample (default 200 rows) that covers every kind of booking.
@@ -59,7 +60,9 @@ PER_KIND = 8
 
 # Words that mark a name as an organisation, not a private person.
 _COMPANY_WORDS = {
-    "gmbh", "ag", "og", "kg", "eu", "gesmbh", "gesellschaft", "se", "sa", "sarl", "ltd",
+    # Legal forms, also cut off as in booking texts ("… Gm", "… Gmb").
+    "gmbh", "gm", "gmb", "ag", "og", "kg", "eu", "gesmbh", "gesellschaft", "se", "sa",
+    "sarl", "sca", "srl", "spa", "ab", "oy", "as", "ltd",
     "inc", "llc", "bv", "nv", "plc", "co", "bank", "sparkasse", "raiffeisen",
     "versicherung", "versicherungen", "magistrat", "stadt", "gemeinde", "finanzamt",
     "republik", "verein", "verband", "gesundheitskasse", "sozialversicherung", "svs",
@@ -96,7 +99,16 @@ def kind(text, amount) -> str:
             name = prefix
             break
     else:
-        name = " ".join(t.split()[:2]) or "(empty)"
+        # The first two words, without names after "zG/", "a/", "v/" and
+        # without numbers: "GUTSCHRIFT A/ANNA" and "GUTSCHRIFT A/OTTO" are one kind.
+        words = []
+        for word in t.split()[:2]:
+            if "/" in word:
+                words.append(word.split("/")[0] + "/")
+                break
+            if not any(ch.isdigit() for ch in word):
+                words.append(word)
+        name = " ".join(words) or "(empty)"
     if "SPESEN:" in t and "KURS:" in t:
         name += " +FX"
     if "STORNO" in t:
@@ -109,14 +121,13 @@ def kind(text, amount) -> str:
 
 
 def is_company(name: str, keep: set) -> bool:
+    """Is this name an organisation? Only a company word or the keep list
+    makes it one. Capitals do not: the export writes some PEOPLE in capitals
+    too, and when in doubt a name is replaced, not kept."""
     if collapse(name).lower() in keep:
         return True
     words = set(re.findall(r"[a-zäöüß]+", collapse(name).lower().replace(".", "")))
-    if words & _COMPANY_WORDS:
-        return True
-    letters = re.sub(r"[^A-Za-zÄÖÜäöü]", "", name)
-    # Card merchants are written in capitals (BILLA, SPOTIFY); people are not.
-    return bool(letters) and letters.isupper()
+    return bool(words & _COMPANY_WORDS)
 
 
 # ------------------------------------------------------------- anonymising --
@@ -172,6 +183,8 @@ class Anonymiser:
         key = clean.lower()
         if key in self.holder_names:
             return HOLDER_PSEUDONYM
+        if key in self.people:  # replaced once: replaced in every spelling
+            return self.person(clean)
         if key not in self.force_replace and is_company(clean, self.keep):
             self.kept.add(clean)
             return clean
@@ -321,7 +334,7 @@ def run(paths, out: Path, seed: int | None = None, target: int = DEFAULT_TARGET,
     own_counter: Counter = Counter()
     for path in paths:
         path = Path(path)
-        result = ba.read_rows(path.read_bytes())
+        result = ba.read_rows(path.read_bytes(), filename=path.name)
         own_counter[result.own_iban] += 1
         reasons = Counter(s["reason"] for s in result.skipped)
         report.append(f"  {path.name}: {len(result.rows)} rows read, {len(result.skipped)} skipped"

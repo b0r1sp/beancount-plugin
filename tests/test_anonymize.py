@@ -12,7 +12,7 @@ import xlrd
 
 from beancount_importers import bank_austria as ba
 from beancount_importers.common import normalise_iban
-from test_bank_austria import EMPLOYER, ENERGY, LANDLORD, OWN, ROWS, row, write_xls
+from test_bank_austria import COL, EMPLOYER, ENERGY, LANDLORD, OWN, ROWS, row, write_xls
 
 _TOOL = Path(__file__).resolve().parents[1] / "tools" / "anonymize_bank_austria.py"
 _spec = importlib.util.spec_from_file_location("anonymize_bank_austria", _TOOL)
@@ -24,6 +24,10 @@ PERSON_ROWS = ROWS + [
     row("2026-03-11", "Online Überweisung zG/ Anna Beispiel", -200.0, payer="Max Muster",
         payer_acct=OWN, payee="Anna Beispiel", payee_acct="AT611904300234573201",
         purpose="Geburtstag Anna Beispiel Vertrag 9876543"),
+    # A private person written in capitals in the name column (the real
+    # export does this): must be replaced, not kept as a "merchant".
+    row("2026-03-13", "Online Überweisung", -30.0, payer="Max Muster", payer_acct=OWN,
+        payee="KARL BEISPIELMANN", payee_acct="AT483200000012345864", purpose="Danke"),
     # The energy supplier again: both rows must keep sharing one fake IBAN.
     row("2026-03-12", "SEPA Lastschrift", -41.0, payer="Max Muster", payer_acct=OWN,
         payee="Wien Energie GmbH", payee_acct=ENERGY, purpose="Gas Teilbetrag 03/2026"),
@@ -67,6 +71,7 @@ def test_fake_ibans_are_valid_and_consistent(result):
 def test_people_are_replaced_and_companies_kept(result):
     text = _texts(result)
     assert "Anna Beispiel" not in text
+    assert "BEISPIELMANN" not in text.upper()
     assert "Max Muster" not in text or "Max Muster" in anon.HOLDER_PSEUDONYM
     assert "Wien Energie GmbH" in text
     assert "BILLA DANKT" in text
@@ -96,8 +101,8 @@ def test_jsonl_keeps_cell_types(result):
     lines = (result / "rows.jsonl").read_text(encoding="utf-8").splitlines()
     header = json.loads(lines[1])["header"]
     first = json.loads(lines[2])["cells"]
-    assert header[0] == "Buchungsdatum"
-    assert isinstance(first[0], float)  # Excel serial date stays a number
+    assert "Buchungsdatum" in header
+    assert isinstance(first[header.index("Buchungsdatum")], float)  # Excel date stays a number
     assert isinstance(first[header.index("Betrag")], float)
 
 
@@ -108,10 +113,46 @@ def test_selection_covers_every_kind_and_respects_the_target(tmp_path):
     anon.run([path], out, seed=1, target=30)
     sample = xlrd.open_workbook(str(out / "sample.xls")).sheet_by_index(0)
     assert sample.nrows - 1 <= 30
-    kinds = {anon.kind(sample.row_values(r)[2], sample.row_values(r)[9])
+    text, amount = COL["Buchungstext"], COL["Betrag"]
+    kinds = {anon.kind(sample.row_values(r)[text], sample.row_values(r)[amount])
              for r in range(1, sample.nrows)}
-    original_kinds = {anon.kind(r[2], r[9]) for r in PERSON_ROWS}
+    original_kinds = {anon.kind(r[text], r[amount]) for r in PERSON_ROWS}
     assert kinds == original_kinds
+
+
+def test_a_name_replaced_once_is_replaced_in_any_case(tmp_path):
+    rows = [
+        row("2026-03-01", "Echtzeitüberweisung zG/ Karl Beispielmann", -10.0),
+        row("2026-03-02", "Online Überweisung", -20.0, payer_acct=OWN,
+            payee="KARL BEISPIELMANN", payee_acct="AT483200000012345864"),
+    ]
+    out = tmp_path / "out"
+    anon.run([write_xls(tmp_path / "x.xls", rows=rows)], out, seed=2, target=10)
+    assert "BEISPIELMANN" not in (out / "rows.jsonl").read_text(encoding="utf-8").upper()
+
+
+@pytest.mark.parametrize("name, company", [
+    ("Wien Energie GmbH", True),
+    ("EMPLOYER GMBH", True),
+    ("Muster Handels Gm", True),  # cut off in a booking text
+    ("KARL BEISPIELMANN", False),  # capitals alone do not make a company
+    ("Anna Beispiel", False),
+])
+def test_is_company(name, company):
+    assert anon.is_company(name, set()) is company
+
+
+def test_files_agree_on_the_own_iban_from_their_names(tmp_path):
+    # Like the real exports: the IBAN is in every file name, and one file has
+    # no own account on any row (only card payments and debits).
+    first = write_xls(tmp_path / f"1-Umsatzliste-a-{OWN}.xls")
+    second = write_xls(tmp_path / f"1-Umsatzliste-b-{OWN}.xls", rows=[
+        row("2026-04-01", "HOFER DANKT 2371 WIEN", -23.4),
+        row("2026-04-02", "SEPA Lastschrift", -63.5, payee="Wien Energie GmbH", payee_acct=ENERGY),
+        row("2026-04-03", "SEPA Lastschrift", -41.0, payee="Wien Energie GmbH", payee_acct=ENERGY),
+    ])
+    report = anon.run([first, second], tmp_path / "out", seed=4, target=50)
+    assert not any("WARNING" in line for line in report)
 
 
 def test_same_seed_gives_the_same_output(source, tmp_path):

@@ -1776,11 +1776,11 @@ def _detect_bank(content, content_encoding: str):
     return (module, raw) if module else None
 
 
-def _parse_bank(module, raw: bytes, account: str, book_text: str):
+def _parse_bank(module, raw: bytes, account: str, book_text: str, filename: str = ""):
     """Rows from a bank importer, in this module's ``_Row`` shape."""
     own = account_metadata(book_text, account, "iban")
     try:
-        result = module.read_rows(raw, own_iban=own)
+        result = module.read_rows(raw, own_iban=own, filename=filename)
     except BankImporterError as exc:
         raise ImporterError(str(exc)) from None
     rows = [
@@ -1835,6 +1835,7 @@ def propose(
     sign: str = "auto",
     opening_balance: str = "",
     counter_account: str = "",
+    filename: str = "",
 ) -> dict:
     """Parse a statement into proposed transactions. Writes nothing, ever.
 
@@ -1862,7 +1863,7 @@ def propose(
     bank = _detect_bank(content, content_encoding)
     if bank is not None:
         module, raw = bank
-        rows, mapping, notes, skipped = _parse_bank(module, raw, account, book_text)
+        rows, mapping, notes, skipped = _parse_bank(module, raw, account, book_text, filename)
         decode_meta, fmt = {}, "xls"
     else:
         text, decode_meta = decode_content(content, content_encoding)

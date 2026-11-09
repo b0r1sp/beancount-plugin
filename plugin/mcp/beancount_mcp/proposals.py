@@ -348,7 +348,9 @@ def propose(book_root, book_text: str, statement_id: str, account: str, **option
     output is kept on the book under the returned ``proposal_id``.
     """
     data, meta = load_statement(book_root, statement_id)
-    result = importing.propose(data, account, book_text=book_text, **options)
+    result = importing.propose(
+        data, account, book_text=book_text, filename=meta.get("filename", ""), **options,
+    )
     result.pop("beancount", None)   # re-rendered at commit, from the rows
     proposal_id = f"prp_{secrets.token_hex(6)}"
     record = {
