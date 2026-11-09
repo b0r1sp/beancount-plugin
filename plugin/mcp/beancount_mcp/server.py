@@ -375,7 +375,13 @@ def propose_transactions(
     statement_id: str = "",
     filename: str = "",
 ) -> str:
-    """Parse a bank statement (CSV or OFX/QFX) into a PROPOSAL. Writes nothing.
+    """Parse a bank statement into a PROPOSAL. Writes nothing.
+
+    Formats: CSV, OFX/QFX, and bank-specific exports that are recognised by
+    their content — currently the Bank Austria "Umsatzliste" (.xls). For a
+    bank export, `mapping.bank` names the bank and `mapping.own_iban` the
+    account holder's IBAN, which is never treated as a counterparty. Put the
+    IBAN on the account's open entry (`iban: "AT…"`) to make it explicit.
 
     Give exactly ONE source:
     - `file_path` — the FULL path of the statement file on this machine.

@@ -43,13 +43,18 @@ dependencies = [
   "beancount>=3.2.3,<4",
   "beanquery>=0.2.0,<1",
   "openpyxl>=3.1.5,<4",
+  # Bank importers: beangulp is Beancount's importer framework (it works
+  # without the libmagic system library); xlrd reads the old .xls format.
+  "beangulp>=0.2,<0.3",
+  "xlrd>=2.0,<3",
 ]
 
 # Development only. A separate group, not uv's default "dev" group: the plugin
 # starts with `uv run`, which installs the default groups, and users must not
 # get pytest. Run the tests with: uv run --project plugin --group test pytest
 [dependency-groups]
-test = ["pytest>=8,<9"]
+# xlwt writes small made-up .xls files for the importer tests.
+test = ["pytest>=8,<9", "xlwt>=1.3,<2"]
 
 [project.urls]
 Source = "https://github.com/b0r1sp/beancount-plugin"
@@ -72,4 +77,4 @@ beancount_mcp = ["fonts/*.woff2", "fonts/*.txt", "*.md"]
 
 [tool.setuptools.packages.find]
 where = ["mcp"]
-include = ["beancount_mcp*"]
+include = ["beancount_mcp*", "beancount_importers*"]

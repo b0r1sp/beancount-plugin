@@ -64,6 +64,9 @@ from decimal import Decimal, InvalidOperation
 
 from .ledger import LedgerError
 
+import beancount_importers
+from beancount_importers.common import ImporterError as BankImporterError
+
 # The date an account opened BY AN IMPORT is opened on.
 #
 # 🔴 NOT THE IMPORT'S EARLIEST ROW. It used to be, and statements do not arrive
@@ -1594,6 +1597,27 @@ def existing_import_ids(book_text: str) -> set[str]:
     return set(_EXISTING_KEY_RE.findall(book_text or ""))
 
 
+def account_metadata(book_text: str, account: str, key: str) -> str:
+    """A metadata value on the ``open`` entry of ``account``, or "".
+
+    Reads e.g. the ``iban:`` line in
+        2025-01-01 open Assets:Bank:Giro EUR
+          iban: "AT61 1904 3002 3457 3201"
+    """
+    lines = (book_text or "").splitlines()
+    for index, line in enumerate(lines):
+        match = _OPEN_RE.match(line)
+        if not match or match.group(1) != account:
+            continue
+        for meta in lines[index + 1:]:
+            if not meta.startswith((" ", "\t")) or not meta.strip():
+                break
+            found = re.match(r'\s+([a-z][\w-]*):\s*"?([^"]*)"?\s*$', meta)
+            if found and found.group(1) == key:
+                return found.group(2).strip()
+    return ""
+
+
 def account_currencies(book_text: str) -> dict[str, list[str]]:
     """Which currencies each ``open`` directive pinned an account to.
 
@@ -1737,6 +1761,63 @@ def _refuse_an_implausible_parse(rows: list, skipped: list[dict], fmt: str) -> N
         )
 
 
+# ---------------------------------------------------------------- bank files --
+def _detect_bank(content, content_encoding: str):
+    """(bank importer module, raw bytes) when the file is a bank-specific
+    export (e.g. Bank Austria .xls), else None for the CSV/OFX path."""
+    raw = None
+    if isinstance(content, (bytes, bytearray)):
+        raw = bytes(content)
+    elif isinstance(content, str) and content_encoding != "text" and _looks_like_base64(content):
+        raw = _b64(content, strict=False)
+    if not raw:
+        return None
+    module = beancount_importers.detect(raw)
+    return (module, raw) if module else None
+
+
+def _parse_bank(module, raw: bytes, account: str, book_text: str):
+    """Rows from a bank importer, in this module's ``_Row`` shape."""
+    own = account_metadata(book_text, account, "iban")
+    try:
+        result = module.read_rows(raw, own_iban=own)
+    except BankImporterError as exc:
+        raise ImporterError(str(exc)) from None
+    rows = [
+        _Row(
+            source_row=r.source_row,
+            date=r.date,
+            description=r.narration,
+            amount=r.amount,
+            currency=r.currency,
+            counterparty_iban=r.counterparty_iban,
+            counterparty=r.counterparty,
+        )
+        for r in result.rows
+    ]
+    mapping = {
+        "file_format": "xls",
+        "bank": module.NAME,
+        "header_row": result.header_row,
+        "columns": result.columns,
+        "own_iban": result.own_iban,
+        "own_iban_source": result.own_iban_source,
+        "sign": "as in the file (negative = money out)",
+        "counterparty": "the payee for money out, the payer for money in; never the own IBAN",
+    }
+    notes = [
+        f"Read as a {module.NAME} export. Payees are grouped by the counterparty "
+        f"IBAN; rows without one (card payments, cash) by the cleaned name."
+    ]
+    if not own:
+        notes.append(
+            f"{account} has no iban: metadata, so the own IBAN was taken from the "
+            f"file ({result.own_iban_source}). Add it to the account's open entry "
+            f"to make this explicit."
+        )
+    return rows, mapping, notes, list(result.skipped)
+
+
 # ------------------------------------------------------------------- the tool --
 def propose(
     content,
@@ -1778,8 +1859,14 @@ def propose(
         )
 
     columns = _coerce_columns(columns)
-    text, decode_meta = decode_content(content, content_encoding)
-    fmt = sniff_format(text, file_format)
+    bank = _detect_bank(content, content_encoding)
+    if bank is not None:
+        module, raw = bank
+        rows, mapping, notes, skipped = _parse_bank(module, raw, account, book_text)
+        decode_meta, fmt = {}, "xls"
+    else:
+        text, decode_meta = decode_content(content, content_encoding)
+        fmt = sniff_format(text, file_format)
     options = {
         "amount_shape": amount_shape,
         "columns": columns,
@@ -1790,9 +1877,9 @@ def propose(
         "opening_balance": opening_balance,
     }
 
-    if fmt == "ofx":
+    if bank is None and fmt == "ofx":
         rows, mapping, notes, skipped = _parse_ofx(text, account, options)
-    else:
+    elif bank is None:
         rows, mapping, notes, skipped = _parse_csv(text, account, options)
     mapping.update(decode_meta)
     _refuse_an_implausible_parse(rows, skipped, fmt)
@@ -1887,7 +1974,7 @@ def propose(
         "wrote_anything": False,
         "account": account,
         "source": {
-            "bytes": len(text.encode("utf-8")),
+            "bytes": len(raw) if bank is not None else len(text.encode("utf-8")),
             "format": fmt,
             "rows_parsed": len(rows),
             "rows_skipped": skipped,
