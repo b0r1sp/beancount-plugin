@@ -45,6 +45,12 @@ dependencies = [
   "openpyxl>=3.1.5,<4",
 ]
 
+# Development only. A separate group, not uv's default "dev" group: the plugin
+# starts with `uv run`, which installs the default groups, and users must not
+# get pytest. Run the tests with: uv run --project plugin --group test pytest
+[dependency-groups]
+test = ["pytest>=8,<9"]
+
 [project.urls]
 Source = "https://github.com/b0r1sp/beancount-plugin"
 

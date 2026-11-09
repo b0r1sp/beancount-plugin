@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # Same start-up path as the plugin: uv provisions Python and the
+      # dependencies from plugin/pyproject.toml. The test group adds pytest.
+      - name: Run tests
+        run: uv run --project plugin --group test pytest tests -q
