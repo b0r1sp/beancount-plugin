@@ -135,13 +135,20 @@ _CARD_RE = re.compile(
 )
 _STANDING_ORDER_RE = re.compile(r"^DA-NR\.:\s*\d+\s+zG/\s*(.*)", re.I)
 _PREFIX_RE = re.compile(
-    r"^(Echtzeitüberweisung zG/|Online Überweisung vom [\d.]+ zG/|SEPA Lastschrift a/|"
-    r"Lastschrift a/|SEPA Gutschrift v/|Gutschrift a/|Gutschrift v/)\s*",
+    r"^(Echtzeitüberweisung zG/|Echtzeitgutschrift [av]/|Online Überweisung vom [\d.]+ zG/|"
+    r"SEPA Lastschrift a/|Lastschrift a/|SEPA Gutschrift v/|Gutschrift a/|Gutschrift v/)\s*",
     re.I,
 )
-# Where the merchant name ends in a card text: a "*", a number of 3+ digits,
-# a card id, a reference or a date.
-_CUT_RE = re.compile(r"\s*\*|\s+\d{3,}\b|\s+[A-Z]\d\d\s|\s+REF\.|\s+\d{2}\.\d{2}/")
+# Text before the name: Excel's text marker ' and a leading number (a postal
+# code, an id or a percentage such as "25,00 %").
+_LEAD_RE = re.compile(r"^'?\s*(?:[\d.,]+\s*%?\s+)?")
+# Where the name ends: a "*", a number of 3+ digits, a card id, an IBAN, a
+# reference or a date.
+_CUT_RE = re.compile(
+    r"\s*\*|\s+\d{3,}\b|\s+[A-Z]\d\d\s|\s+[A-Z]{2}\d{2}[A-Z0-9]{8,}|\s+REF[.:]|"
+    r"\s+\d{2}\.\d{2}/",
+    re.I,
+)
 _CITY_RE = re.compile(r"\s+(WIEN|VIENNA|UNKNOWN)\b.*")
 
 
@@ -156,6 +163,7 @@ def clean_payee(text) -> str:
     if standing:
         t = standing.group(1)
     t = _PREFIX_RE.sub("", t)
+    t = _LEAD_RE.sub("", t, count=1)
     t = _CUT_RE.split(t)[0]
     t = _CITY_RE.sub("", t)
     t = re.sub(r"\s*\d+$", "", t)

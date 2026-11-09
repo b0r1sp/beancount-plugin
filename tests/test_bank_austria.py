@@ -214,6 +214,11 @@ def test_unknown_own_iban_is_refused(tmp_path):
     ("MCDONALDS155 2360", "MCDONALDS"),
     ("Echtzeitüberweisung zG/ Anna Beispiel", "Anna Beispiel"),
     ("Gutschrift a/Anna Beispiel", "Anna Beispiel"),
+    # Patterns from the real exports.
+    ("Echtzeitgutschrift a/Anna Beispiel AT611904300234573201.03/22:13 Ref:", "Anna Beispiel"),
+    ("'1070 MEDIAM", "MEDIAM"),
+    ("'25,00 % KESt", "KESt"),
+    ("94879522 FRANKFURT MAI", "FRANKFURT MAI"),
 ])
 def test_clean_payee(text, expected):
     assert ba.clean_payee(text) == expected

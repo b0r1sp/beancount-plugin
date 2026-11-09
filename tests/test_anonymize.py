@@ -155,6 +155,36 @@ def test_files_agree_on_the_own_iban_from_their_names(tmp_path):
     assert not any("WARNING" in line for line in report)
 
 
+def test_pseudonyms_contain_no_digits(result):
+    # The payee clean-up removes numbers at the end of a name, so "Person 01"
+    # and "Person 02" would both become "Person".
+    import re
+    pseudonyms = set(re.findall(r"Person \S+", _texts(result)))
+    assert pseudonyms
+    assert not any(ch.isdigit() for p in pseudonyms for ch in p)
+
+
+def test_card_payments_are_one_kind():
+    # Newer card texts start with the merchant: one kind, not one per merchant.
+    assert anon.kind("HOFER DANKT 2371 WIEN", -23.4) == anon.kind("MCDONALDS155 2360", -11.8)
+    assert anon.kind("HOFER DANKT 2371 WIEN", -23.4) != anon.kind("SEPA Lastschrift", -63.5)
+    assert anon.kind("Echtzeitüberweisung zG/ Anna", -5.0) != anon.kind("HOFER DANKT", -5.0)
+    assert anon.kind("'25,00 % KESt", -1.0) == "KEST / out"
+
+
+def test_review_lists_merchants_from_card_texts(result):
+    # A merchant can be a person's name; the review must show it.
+    review = (result / "review.txt").read_text(encoding="utf-8")
+    assert "Merchants in card texts" in review
+    assert "BILLA DANKT" in review.split("Merchants in card texts")[1]
+
+
+def test_replace_list_also_replaces_merchants_in_card_texts(source, tmp_path):
+    out = tmp_path / "out"
+    anon.run([source], out, seed=7, target=50, names={"replace": ["BILLA DANKT"]})
+    assert "BILLA DANKT" not in _texts(out)
+
+
 def test_same_seed_gives_the_same_output(source, tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     anon.run([source], a, seed=3, target=50)

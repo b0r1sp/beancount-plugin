@@ -91,18 +91,33 @@ def load(path: Path):
     return header, rows, book.datemode
 
 
+# First words of bank booking texts. A text that starts with anything else
+# is a card payment in the newer format, where the merchant comes first.
+_BOOKING_WORDS = {
+    "SEPA", "LASTSCHRIFT", "GUTSCHRIFT", "ÜBERWEISUNG", "ONLINE", "ECHTZEITÜBERWEISUNG",
+    "ECHTZEITGUTSCHRIFT", "DAUERAUFTRAG", "EINZAHLUNG", "ABHEBUNG", "BANKOMAT", "ENTGELT",
+    "KONTOFÜHRUNG", "KONTOPAKET", "KARTENPREIS", "PRÄMIE", "SOLLZINSEN", "HABENZINSEN",
+    "ZINSEN", "KEST", "STORNO", "INFORMATION", "RÜCKBUCHUNG",
+}
+
+
 def kind(text, amount) -> str:
     """What sort of booking a row is, for an even sample."""
     t = collapse(text).upper()
+    first = re.sub(r"[^A-ZÄÖÜ-]", "", (t.lstrip("'0123456789.,% ").split() or [""])[0])
     for prefix in ("POS", "E-COMM", "ATM", "AUTOMAT", "DA-NR"):
         if t.startswith(prefix):
             name = prefix
             break
     else:
+        name = None
+    if name is None and t and first not in _BOOKING_WORDS:
+        name = "CARD (merchant first)"
+    if name is None:
         # The first two words, without names after "zG/", "a/", "v/" and
         # without numbers: "GUTSCHRIFT A/ANNA" and "GUTSCHRIFT A/OTTO" are one kind.
         words = []
-        for word in t.split()[:2]:
+        for word in t.lstrip("'0123456789.,% ").split()[:2]:
             if "/" in word:
                 words.append(word.split("/")[0] + "/")
                 break
@@ -173,7 +188,10 @@ class Anonymiser:
         key = collapse(name).lower()
         self.spelling.setdefault(key, collapse(name))
         if key not in self.people:
-            self.people[key] = f"Person {len(self.people) + 1:02d}"
+            # Letters, not digits: the payee clean-up removes numbers at the
+            # end of a name, so "Person 01" and "Person 02" would be one payee.
+            n = len(self.people)
+            self.people[key] = f"Person {chr(65 + n // 26 % 26)}{chr(97 + n % 26)}"
         return self.people[key]
 
     def name(self, name: str) -> str:
@@ -290,6 +308,18 @@ def select(rows, header, target: int, rng: random.Random):
 
 
 # ----------------------------------------------------------------- writing --
+def card_merchants(header, rows) -> list[str]:
+    """The payee the importer will make of every row without name columns —
+    the merchants of card payments, exactly as they will be published."""
+    col = {norm_header(h): i for i, h in enumerate(header)}
+    found = set()
+    for r in rows:
+        names = [collapse(r[col[f]]) for f in ("auftraggebername", "empfaengername") if f in col]
+        if not any(names) and "buchungstext" in col:
+            found.add(ba.clean_payee(r[col["buchungstext"]]))
+    return sorted(found)
+
+
 def write(out: Path, header, rows, anonymiser, report_lines):
     out.mkdir(parents=True, exist_ok=True)
     with open(out / "rows.jsonl", "w", encoding="utf-8") as handle:
@@ -319,6 +349,10 @@ def write(out: Path, header, rows, anonymiser, report_lines):
         *[f"  {anonymiser.spelling.get(n, n)}  ->  {HOLDER_PSEUDONYM}" for n in sorted(anonymiser.holder_names)],
         *[f"  {anonymiser.spelling.get(n, n)}  ->  {p}"
           for n, p in sorted(anonymiser.people.items(), key=lambda x: x[1])],
+        "",
+        f"Merchants in card texts ({len(card_merchants(header, rows))}) — these stay as they are; "
+        "check that none is a person (add it to --names replace):",
+        *[f"  {m}" for m in card_merchants(header, rows)],
         "",
         "This file names real people. Do NOT commit it.",
     ]
