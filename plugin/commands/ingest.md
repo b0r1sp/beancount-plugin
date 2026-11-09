@@ -25,10 +25,13 @@ flagged, and only then pass its `beancount` to `add_transactions` unchanged.
 A PDF bank STATEMENT is neither: extract the transactions from it (date, payee, amount, and
 whether each line is a debit or credit).
 
-1. **Hand the bytes to the tool.** Base64 the file and call
-   `propose_transactions(content=<base64>, account="Assets:Checking", filename="<name>")`, naming
-   the account the statement belongs to. If you were given a `statement_id` (`stm_…`), pass that
-   instead of `content` — the file is already staged. It parses the statement and
+1. **Hand the file to the tool — by path, not by contents.** Call
+   `propose_transactions(file_path="<full path>", account="Assets:Checking")`, naming the account
+   the statement belongs to. Use the FULL path (`~` is fine). The server reads the file itself;
+   do **not** read it and do **not** copy or base64 it into `content` — a statement of a few
+   hundred KB does not fit in one response, and the rows must not pass through you. If you were
+   given a `statement_id` (`stm_…`), pass that instead — the file is already staged. Use
+   `content` only if your client has no file access. It parses the statement and
    returns a SUMMARY with a `proposal_id`: counts, date range, totals, the column mapping, what it
    flagged, and each distinct payee once. It never returns the rows and never writes.
 

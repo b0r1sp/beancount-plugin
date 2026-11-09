@@ -77,8 +77,9 @@ against `Equity:Opening-Balances`:
 
 ## Importing bank / card statements
 
-**A CSV, OFX or QFX goes through `propose_transactions`, not through you.** Base64 the bytes (or
-pass the `statement_id` you were given), name the account, and it returns a summary: the column
+**A CSV, OFX or QFX goes through `propose_transactions`, not through you.** Pass its full path as
+`file_path` (or the `statement_id` you were given) — never copy the file into `content` — name the
+account, and it returns a summary: the column
 mapping it detected — which column was the amount, which date format, and which way a positive
 number points, checked against the running balance when there is one — plus counts, what it
 flagged, and each distinct payee once, under a `proposal_id`. It never writes. Choose an account

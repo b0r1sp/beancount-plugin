@@ -360,6 +360,7 @@ def assess_book() -> str:
 def propose_transactions(
     content: str = "",
     account: str = "",
+    file_path: str = "",
     currency: str = "",
     file_format: str = "auto",
     content_encoding: str = "auto",
@@ -376,10 +377,14 @@ def propose_transactions(
 ) -> str:
     """Parse a bank statement (CSV or OFX/QFX) into a PROPOSAL. Writes nothing.
 
-    Give `statement_id` when you were given one (`stm_…`): the statement is
-    already staged beside the book, so do NOT ask for or copy the file. Otherwise
-    give `content` — the statement's bytes, base64-encoded, or its text pasted
-    straight in. NOT a path.
+    Give exactly ONE source:
+    - `file_path` — the FULL path of the statement file on this machine.
+      Preferred: the server reads the file and its rows never pass through
+      you, so a large statement (up to 8 MB) is no problem;
+    - `statement_id` when you were given one (`stm_…`): the statement is
+      already staged beside the book, so do NOT ask for or copy the file;
+    - `content` — the statement's bytes, base64-encoded, or its text pasted
+      straight in. Only for a client without file access; NOT a path.
 
     `account` is required: the book account the statement belongs to, e.g.
     'Assets:Checking' or 'Liabilities:Visa'. Every row is one side of it and
@@ -411,7 +416,17 @@ def propose_transactions(
         decimal_separator=decimal_separator, sign=sign,
         opening_balance=opening_balance, counter_account=counter_account,
     )
-    if not statement_id:
+    sources = [s for s in (file_path, content, statement_id) if str(s or "").strip()]
+    if len(sources) != 1:
+        raise LedgerError(
+            "Give exactly one of file_path (a statement file on this machine), "
+            "statement_id (a statement already staged) or content (the "
+            "statement's text or base64). Nothing was read."
+        )
+    if file_path.strip():
+        data, name = proposals.read_statement_file(file_path)
+        statement_id = proposals.stage_statement(book.root, data, filename or name)["statement_id"]
+    elif not statement_id:
         statement_id = proposals.stage_statement(
             book.root, proposals.content_to_bytes(content, content_encoding), filename,
         )["statement_id"]

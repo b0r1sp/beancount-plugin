@@ -147,6 +147,36 @@ def content_to_bytes(content, content_encoding: str = "auto") -> bytes:
     return content.encode("utf-8")
 
 
+def read_statement_file(file_path: str) -> tuple[bytes, str]:
+    """The bytes of a statement file on this machine, and its file name.
+
+    The server reads the file itself, so the model does not have to copy its
+    contents into the tool call — which fails for a file of a few hundred KB,
+    because one model response cannot hold it. The size is checked BEFORE the
+    file is read.
+    """
+    target = Path(str(file_path).strip()).expanduser()
+    if not target.is_absolute():
+        raise ProposalError(
+            f"'{file_path}' is not a full path. Give the full path of the "
+            f"statement file, for example {Path.home() / 'Downloads' / 'statement.csv'}."
+        )
+    if not target.exists():
+        raise ProposalError(f"No file at {target}.")
+    if target.is_dir():
+        raise ProposalError(f"{target} is a directory, not a statement file.")
+    size = target.stat().st_size
+    if size > MAX_STATEMENT_BYTES:
+        raise ProposalError(
+            f"{target.name} is {size:,} bytes; the limit is "
+            f"{MAX_STATEMENT_BYTES:,}. Export a shorter date range."
+        )
+    try:
+        return target.read_bytes(), target.name
+    except OSError as exc:
+        raise ProposalError(f"Could not read {target}: {exc}") from None
+
+
 def stage_statement(book_root, data: bytes, filename: str = "") -> dict:
     """Store a statement's bytes on the book and return the reference to it.
 
