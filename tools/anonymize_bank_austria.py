@@ -30,7 +30,13 @@ Output (in the output folder):
 * review.txt   — which names were kept and which were replaced (do not commit)
 
 Review preview.csv and review.txt. To change a decision, list names in a JSON
-file and pass it with --names: {"keep": ["..."], "replace": ["..."]}.
+file and pass it with --names:
+
+    {"keep": ["..."], "replace": ["..."], "rename": {"Real Company AG": "EMPLOYER GMBH"}}
+
+"keep" keeps a name, "replace" turns it into a person pseudonym, and "rename"
+swaps a company for a neutral company name of your choice (e.g. an employer),
+in the name columns and in all texts. Keep this file in tmp/: it holds real names.
 Then copy rows.jsonl and sample.xls to tests/fixtures/bank_austria/.
 """
 from __future__ import annotations
@@ -147,7 +153,7 @@ def is_company(name: str, keep: set) -> bool:
 
 # ------------------------------------------------------------- anonymising --
 class Anonymiser:
-    def __init__(self, seed: int, keep=(), replace=()):
+    def __init__(self, seed: int, keep=(), replace=(), rename=None):
         self.rng = random.Random(seed)
         self.salt = str(self.rng.random()).encode()
         self.factor = Decimal(str(round(self.rng.uniform(0.6, 1.4), 4)))
@@ -156,6 +162,9 @@ class Anonymiser:
         self.offset = self.rng.choice([-1, 1]) * self.rng.randint(30, 300)
         self.keep = {n.lower() for n in keep}
         self.force_replace = {n.lower() for n in replace}
+        # Company -> neutral company name, chosen by the user.
+        self.rename = {collapse(k).lower(): v for k, v in (rename or {}).items()}
+        self.renamed: dict[str, str] = {collapse(k): v for k, v in (rename or {}).items()}
         self.ibans: dict[str, str] = {}
         self.numbers: dict[str, str] = {}
         self.people: dict[str, str] = {}
@@ -201,6 +210,8 @@ class Anonymiser:
         key = clean.lower()
         if key in self.holder_names:
             return HOLDER_PSEUDONYM
+        if key in self.rename:
+            return self.rename[key]
         if key in self.people:  # replaced once: replaced in every spelling
             return self.person(clean)
         if key not in self.force_replace and is_company(clean, self.keep):
@@ -233,6 +244,8 @@ class Anonymiser:
             return f"\x00{len(markers) - 1}\x00"
 
         t = _IBAN_IN_TEXT.sub(lambda m: protect(self.fake_iban(m.group(0))), t)
+        for real in sorted(self.rename, key=len, reverse=True):
+            t = re.sub(re.escape(real), lambda _m, f=self.rename[real]: protect(f), t, flags=re.I)
         for real in sorted(self.holder_names | set(self.people) | self.force_replace, key=len, reverse=True):
             if real:
                 fake = HOLDER_PSEUDONYM if real in self.holder_names else self.person(real)
@@ -345,6 +358,9 @@ def write(out: Path, header, rows, anonymiser, report_lines):
         f"Names KEPT as companies or merchants ({len(anonymiser.kept)}) — check that no person is here:",
         *[f"  {n}" for n in sorted(anonymiser.kept)],
         "",
+        f"Companies RENAMED ({len(anonymiser.renamed)}):",
+        *[f"  {real}  ->  {new}" for real, new in sorted(anonymiser.renamed.items())],
+        "",
         f"Names REPLACED ({len(anonymiser.people) + len(anonymiser.holder_names)}):",
         *[f"  {anonymiser.spelling.get(n, n)}  ->  {HOLDER_PSEUDONYM}" for n in sorted(anonymiser.holder_names)],
         *[f"  {anonymiser.spelling.get(n, n)}  ->  {p}"
@@ -363,7 +379,7 @@ def write(out: Path, header, rows, anonymiser, report_lines):
 def run(paths, out: Path, seed: int | None = None, target: int = DEFAULT_TARGET, names=None):
     seed = seed if seed is not None else random.SystemRandom().randrange(1 << 30)
     names = names or {}
-    anonymiser = Anonymiser(seed, names.get("keep", ()), names.get("replace", ()))
+    anonymiser = Anonymiser(seed, names.get("keep", ()), names.get("replace", ()), names.get("rename"))
     header, all_rows, report = None, [], ["Real-data check with the Bank Austria importer:"]
     own_counter: Counter = Counter()
     for path in paths:
@@ -404,7 +420,8 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, default=Path("tmp/anonymized"), help="output folder (git-ignored)")
     parser.add_argument("--target", type=int, default=DEFAULT_TARGET, help="rows in the sample")
     parser.add_argument("--seed", type=int, help="fix the random choices (default: new each run)")
-    parser.add_argument("--names", type=Path, help='JSON: {"keep": [...], "replace": [...]}')
+    parser.add_argument("--names", type=Path,
+                        help='JSON: {"keep": [...], "replace": [...], "rename": {"Company": "NEUTRAL GMBH"}}')
     args = parser.parse_args(argv)
     names = json.loads(args.names.read_text(encoding="utf-8")) if args.names else None
     report = run(args.files, args.out, seed=args.seed, target=args.target, names=names)

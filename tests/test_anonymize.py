@@ -185,6 +185,20 @@ def test_replace_list_also_replaces_merchants_in_card_texts(source, tmp_path):
     assert "BILLA DANKT" not in _texts(out)
 
 
+def test_rename_replaces_a_company_with_a_neutral_name(source, tmp_path):
+    # An employer is a company, so it would be kept; "rename" swaps it for a
+    # neutral company name (not a person pseudonym), in name columns and texts.
+    out = tmp_path / "out"
+    anon.run([source], out, seed=7, target=50,
+             names={"rename": {"Wien Energie GmbH": "SUPPLIER GMBH", "billa dankt": "SHOP DANKT"}})
+    text = _texts(out)
+    assert "Wien Energie" not in text
+    assert "SUPPLIER GMBH" in text
+    assert "BILLA DANKT" not in text and "SHOP DANKT" in text
+    review = (out / "review.txt").read_text(encoding="utf-8")
+    assert "Wien Energie GmbH  ->  SUPPLIER GMBH" in review
+
+
 def test_same_seed_gives_the_same_output(source, tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     anon.run([source], a, seed=3, target=50)
