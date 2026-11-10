@@ -1,0 +1,18 @@
+{
+  "account": "Assets:Bank:BankAustria:Giro",
+  "currency": "EUR",
+  "own_iban": "",
+  "opening": {"date": "2025-01-01", "amount": "1.000,00"},
+  "extra_transactions": [
+    {"date": "2026-10-26", "amount": "-12,34", "narration": "Row from the PDF statement"}
+  ],
+  "expected_entries": 101,
+  "control_balances": [
+    {"date": "2025-06-30", "balance": "-123,45"},
+    {"date": "2026-10-27", "balance": "67,89"}
+  ],
+  "monthly_totals": {
+    "2025-01": "-100,00",
+    "2025-02": "250,50"
+  }
+}
